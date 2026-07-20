@@ -1,4 +1,4 @@
-# genus-primer-pipeline
+# AmPrime
 
 > Design and validate amplicon-sequencing primers for **any bacterial genus**
 > and **any set of housekeeping genes** — straight from public NCBI genomes.
@@ -46,12 +46,12 @@ Genes run in parallel — point it at eight genes and it builds eight reports.
 
 ```bash
 # 1. Clone
-git clone git@github.com:Xinming9606/genus-primer-pipeline.git
-cd genus-primer-pipeline
+git clone git@github.com:Xinming9606/AmPrime.git
+cd AmPrime
 
 # 2. Create the environment (one env, all tools)
 micromamba env create -f workflow/envs/environment.yaml
-micromamba activate primer-pipeline
+micromamba activate AmPrime
 
 # 3. Edit config/config.yaml — set your genus and genes
 
