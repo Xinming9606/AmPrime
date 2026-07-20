@@ -115,7 +115,7 @@ For each gene, under `results/<genus>/`:
 ## Repository layout
 
 ```
-genus-primer-pipeline/
+AmPrime/
 ├── config/
 │   └── config.yaml              # the only file you edit
 ├── workflow/
