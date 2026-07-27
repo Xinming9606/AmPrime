@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# design_primers.py — Pure Python replacement for design_primers.R
+# design_primers.py - pure Python primer design implementation
 #
 # Reads a multiple sequence alignment (FASTA), computes per-position Shannon
 # entropy, builds degenerate (IUPAC) consensus kmer windows, evaluates all

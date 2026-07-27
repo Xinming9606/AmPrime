@@ -106,34 +106,35 @@ For each gene, under `results/<genus>/`:
 
 ```text
 AmPrime/
-├── config/
-│   └── config.yaml              # the only file you edit
-├── workflow/
-│   ├── Snakefile                # orchestrator: config, paths, includes
-│   ├── rules/                   # one .smk module per step
-│   │   ├── download_genomes.smk
-│   │   ├── extract_gene.smk
-│   │   ├── cluster.smk
-│   │   ├── align.smk
-│   │   ├── design_primers.smk
-│   │   ├── in_silico_pcr.smk
-│   │   └── reports.smk
-│   ├── scripts/                 # the logic each rule calls
-│   │   ├── extract_gene.py
-│   │   ├── design_primers.R
-│   │   ├── in_silico_pcr.py
-│   │   └── gene_report.Rmd
-│   └── envs/
-│       └── environment.yaml     # all dependencies, one environment
-└── results/                     # generated output (git-ignored)
+|-- config/
+|   `-- config.yaml              # the only file you edit
+|-- workflow/
+|   |-- Snakefile                # orchestrator: config, paths, includes
+|   |-- rules/                   # one .smk module per step
+|   |   |-- download_genomes.smk
+|   |   |-- extract_gene.smk
+|   |   |-- cluster.smk
+|   |   |-- align.smk
+|   |   |-- design_primers.smk
+|   |   |-- in_silico_pcr.smk
+|   |   `-- reports.smk
+|   |-- scripts/                 # the logic each rule calls
+|   |   |-- extract_gene.py
+|   |   |-- design_primers.py
+|   |   |-- in_silico_pcr.py
+|   |   |-- gene_report.py
+|   |   `-- gene_report.html
+|   `-- envs/
+|       `-- environment.yaml     # all dependencies, one environment
+`-- results/                     # generated output (git-ignored)
 ```
 
 ## Requirements
 
 A conda-compatible package manager (`conda`, `mamba`, or `micromamba`) and an
-internet connection for the genome download step. Everything else —
-Snakemake, `ncbi-genome-download`, `vsearch`, `MUSCLE`, `seqkit`, R and the
-reporting packages — is pinned in `workflow/envs/environment.yaml`.
+internet connection for the genome download step. Everything else - Snakemake,
+`ncbi-genome-download`, `vsearch`, `MUSCLE`, `seqkit`, and Python reporting
+packages - is pinned in `workflow/envs/environment.yaml`.
 
 ## Notes & limitations
 

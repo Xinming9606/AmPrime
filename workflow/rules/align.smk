@@ -2,7 +2,7 @@
 # align.smk
 #
 # Per-gene rule: multiple sequence alignment of the clustered centroids
-# using MUSCLE. The alignment feeds design_primers.R for consensus and
+# using MUSCLE. The alignment feeds design_primers.py for consensus and
 # Shannon-entropy calculation.
 #
 # Input  : results/{genus}/extracted/{gene}.centroids.fasta  [temp, from cluster]

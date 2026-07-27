@@ -20,9 +20,5 @@ dependencies:
   - muscle>=5
   - seqkit
 
-  # R + reporting
-  - r-base>=4.3
-  - r-knitr
-  - r-rmarkdown
-  - r-kableextra
-  - pandoc
+  # reporting
+  - markdown

@@ -107,7 +107,7 @@ if len(primer_rows) == 0:
     write_summary([])
     sys.exit(0)
 
-top = primer_rows[0]  # already sorted by combined_score in design_primers.R
+top = primer_rows[0]  # already sorted by combined_score in design_primers.py
 primer_id = top["primer_id"]
 fwd = top["fwd"]
 rev = top["rev"]
