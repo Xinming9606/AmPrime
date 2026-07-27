@@ -152,9 +152,7 @@ def main():
 
     n_out = count_fasta_records(args.output)
     elapsed = perf_counter() - started
-    log.info(
-        "Clustered %d sequences into %d centroids in %.2f s", n_in, n_out, elapsed
-    )
+    log.info("Clustered %d sequences into %d centroids in %.2f s", n_in, n_out, elapsed)
     return 0
 
 

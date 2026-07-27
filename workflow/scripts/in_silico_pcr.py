@@ -186,9 +186,7 @@ def _summarize_candidates(candidates, total_genomes):
     rows = []
     for candidate in candidates:
         lengths = candidate["amplicon_lengths"]
-        rate = (
-            candidate["amplified_genomes"] / total_genomes if total_genomes else 0.0
-        )
+        rate = candidate["amplified_genomes"] / total_genomes if total_genomes else 0.0
         mean_len = sum(lengths) / len(lengths) if lengths else 0.0
         rows.append(
             {

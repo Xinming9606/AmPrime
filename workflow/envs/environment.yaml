@@ -19,6 +19,9 @@ dependencies:
   # reporting
   - markdown
 
+  # development checks
+  - ruff
+
   # Optional alignment backends are intentionally not installed by default.
   # Set alignment_backend: mafft/muscle/auto only after installing that aligner
   # separately on your platform.

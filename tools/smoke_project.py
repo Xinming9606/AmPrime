@@ -184,9 +184,7 @@ def check_sequence_cli_steps():
         align_log = tmp / "align.log"
 
         raw_fasta.write_text(
-            ">a\nACGTACGTACGT\n"
-            ">b\nACGTACGTACGT\n"
-            ">c\nACGTACGTTTGT\n",
+            ">a\nACGTACGTACGT\n>b\nACGTACGTACGT\n>c\nACGTACGTTTGT\n",
             encoding="utf-8",
         )
         subprocess.run(

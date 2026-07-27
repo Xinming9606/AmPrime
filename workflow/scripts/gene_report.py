@@ -100,9 +100,13 @@ def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img)
         out.append("|---|---|")
         out.append(f"| **Primer pair** | {_md_code(a.get('primer_id', ''))} |")
         if a.get("validation_rank"):
-            out.append(f"| **Validation rank** | {_md_cell(a.get('validation_rank'))} |")
+            out.append(
+                f"| **Validation rank** | {_md_cell(a.get('validation_rank'))} |"
+            )
         if a.get("input_rank"):
-            out.append(f"| **Original candidate rank** | {_md_cell(a.get('input_rank'))} |")
+            out.append(
+                f"| **Original candidate rank** | {_md_cell(a.get('input_rank'))} |"
+            )
         out.append(f"| **Forward primer** | {_md_code(a.get('fwd', ''))} |")
         out.append(f"| **Reverse primer** | {_md_code(a.get('rev', ''))} |")
         out.append(
@@ -130,9 +134,9 @@ def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img)
         t = top_primer
         out.append("| Property | Forward | Reverse |")
         out.append("|---|---|---|")
-        out.append(
-            f"| Sequence | {_md_code(t.get('fwd', ''))} | {_md_code(t.get('rev', ''))} |"
-        )
+        fwd_seq = _md_code(t.get("fwd", ""))
+        rev_seq = _md_code(t.get("rev", ""))
+        out.append(f"| Sequence | {fwd_seq} | {rev_seq} |")
         out.append(
             f"| Position | {_md_cell(t.get('fwd_pos', ''))} | "
             f"{_md_cell(t.get('rev_pos', ''))} |"
