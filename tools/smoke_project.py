@@ -123,7 +123,27 @@ def check_fasta_io():
 def check_download_manifest():
     download_genomes = load_script_module("download_genomes")
     with tempfile.TemporaryDirectory() as tmp_dir:
-        manifest = Path(tmp_dir) / "download_manifest.tsv"
+        tmp = Path(tmp_dir)
+        genomic = tmp / "genomic"
+        cds = tmp / "cds"
+        rna = tmp / "rna"
+        manifest = tmp / "download_manifest.tsv"
+        genomic.mkdir()
+        (genomic / "stale.fna").write_text(">old\nACGT\n", encoding="utf-8")
+        manifest.write_text("stale\n", encoding="utf-8")
+
+        downloads = [
+            ("genomic", "fasta", genomic),
+            ("cds", "cds-fasta", cds),
+            ("rna", "rna-fasta", rna),
+        ]
+        download_genomes.reset_download_outputs(downloads, manifest)
+        assert genomic.is_dir()
+        assert cds.is_dir()
+        assert rna.is_dir()
+        assert not (genomic / "stale.fna").exists()
+        assert not manifest.exists()
+
         download_genomes.write_manifest(
             manifest,
             "Borrelia",
@@ -180,6 +200,7 @@ def check_sequence_cli_steps():
         raw_fasta = tmp / "raw.fasta"
         centroids = tmp / "centroids.fasta"
         aligned = tmp / "aligned.fasta"
+        alignment_meta = tmp / "aligned.metadata.tsv"
         cluster_log = tmp / "cluster.log"
         align_log = tmp / "align.log"
 
@@ -214,6 +235,8 @@ def check_sequence_cli_steps():
                 str(centroids),
                 "--output",
                 str(aligned),
+                "--metadata",
+                str(alignment_meta),
                 "--backend",
                 "auto",
                 "--log",
@@ -225,6 +248,10 @@ def check_sequence_cli_steps():
         )
         aligned_lengths = {len(seq) for _, seq in fasta_io.parse_fasta(aligned)}
         assert len(aligned_lengths) == 1
+        with alignment_meta.open(encoding="utf-8") as fh:
+            metadata_rows = list(csv.DictReader(fh, delimiter="\t"))
+        assert metadata_rows[0]["requested_backend"] == "auto"
+        assert metadata_rows[0]["backend_used"] in {"python", "mafft", "muscle"}
     print("cluster and align cli ok")
 
 

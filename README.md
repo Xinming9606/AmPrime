@@ -27,7 +27,7 @@ but it does not test off-target amplification outside the genus.
 For each gene independently, AmPrime runs this pipeline:
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Download genomes<br/>NCBI] --> B[Extract gene<br/>CDS + rRNA]
     B --> C[Dereplicate]
     C --> D[Align]
@@ -148,6 +148,7 @@ For each gene, outputs are written under `results/<genus>/`.
 | ------------------------------- | --------------------------------------------------------------------------------- |
 | `reports/<gene>_report.html`    | Main deliverable: recommendation, PCR validation, plot, and candidate table.      |
 | `genomes/download_manifest.tsv` | Download manifest with FASTA counts, sizes, genus, and assembly level.            |
+| `aligned/<gene>.alignment.tsv`  | Alignment backend metadata, including actual backend used when `auto` is set.     |
 | `primers/<gene>_primers.tsv`    | Filtered candidate primer pairs ranked by score.                                  |
 | `primers/<gene>_amplicons.tsv`  | In silico PCR results for the top validated primer candidates, sorted best first. |
 | `primers/<gene>_diversity.png`  | Per-position Shannon entropy plot with top primer sites marked.                   |
@@ -201,6 +202,11 @@ AmPrime/
 Snakemake is intentionally kept as a thin scheduler. It manages dependencies,
 parallel execution, logs, benchmarks, and resumability. The actual work is done
 by standalone Python command-line tools in `workflow/scripts/`.
+
+Download outputs are refreshed as a unit when the download rule runs, so stale
+FASTA files from a previous genus or assembly level do not mix into a new run.
+Alignment runs write a small metadata TSV next to the alignment, recording the
+requested backend and the backend actually used.
 
 This keeps each step easy to test and debug. For example:
 
@@ -262,6 +268,11 @@ If a batch run is slow, inspect the per-step logs and benchmarks under
 steps log input sequence counts, centroid counts, scanned genome bases, and
 elapsed time. Start with a stricter assembly level such as `complete`, a smaller
 gene set, or a lower `pcr_top_n` when first testing a large genus.
+
+If you use `alignment_backend: auto`, check
+`results/<genus>/aligned/<gene>.alignment.tsv` to see whether the run used
+Python, MAFFT, or MUSCLE. For final reproducible runs, set the backend
+explicitly.
 
 ## Requirements
 

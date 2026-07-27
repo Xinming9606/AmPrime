@@ -7,6 +7,7 @@
 #
 # Input  : results/{genus}/extracted/{gene}.centroids.fasta  [temp, from cluster]
 # Output : results/{genus}/aligned/{gene}.aln                [temp]
+#          results/{genus}/aligned/{gene}.alignment.tsv      [backend metadata]
 #
 # .aln is temp(): consumed only by design_primers; not needed afterwards.
 # =============================================================================
@@ -16,7 +17,8 @@ rule align:
     input:
         str(EXTRACTED / "{gene}.centroids.fasta")
     output:
-        temp(str(ALIGNED / "{gene}.aln"))
+        aln = temp(str(ALIGNED / "{gene}.aln")),
+        metadata = str(ALIGNED / "{gene}.alignment.tsv")
     params:
         config_file = "config/config.yaml"
     log:
@@ -27,7 +29,8 @@ rule align:
         """
         python workflow/scripts/align_fasta.py \
             --input {input:q} \
-            --output {output:q} \
+            --output {output.aln:q} \
+            --metadata {output.metadata:q} \
             --config {params.config_file:q} \
             --log {log:q}
         """
