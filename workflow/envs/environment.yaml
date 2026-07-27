@@ -11,6 +11,7 @@ dependencies:
   - biopython
   - numpy
   - matplotlib-base
+  - pyyaml
 
   # genome download
   - ncbi-genome-download

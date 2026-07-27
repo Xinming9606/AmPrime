@@ -12,6 +12,8 @@ import logging
 import os
 import re
 
+from config_schema import load_config_file
+
 log = logging.getLogger(__name__)
 
 
@@ -101,6 +103,7 @@ def parse_args():
     parser.add_argument("--rna-dir", required=True)
     parser.add_argument("--out-fasta", required=True)
     parser.add_argument("--gene", required=True)
+    parser.add_argument("--config", help="Optional AmPrime config.yaml for aliases")
     parser.add_argument("--alias", action="append", default=[], dest="aliases")
     parser.add_argument("--log", required=True)
     return parser.parse_args()
@@ -110,10 +113,16 @@ def main():
     args = parse_args()
     configure_logging(args.log)
 
-    search_names = set([args.gene.lower()] + [a.lower() for a in args.aliases])
+    aliases = list(args.aliases)
+    if args.config:
+        cfg = load_config_file(args.config)
+        config_aliases = cfg.get("gene_aliases", {}).get(args.gene, [])
+        aliases.extend(config_aliases)
+
+    search_names = set([args.gene.lower()] + [a.lower() for a in aliases])
 
     log.info("Target gene : %s", args.gene)
-    log.info("Aliases     : %s", args.aliases)
+    log.info("Aliases     : %s", aliases)
     log.info("Search names: %s", sorted(search_names))
     log.info("CDS dir     : %s", args.cds_dir)
     log.info("RNA dir     : %s", args.rna_dir)

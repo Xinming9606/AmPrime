@@ -1,91 +1,94 @@
 # =============================================================================
-# genus-primer-pipeline — configuration file
+# AmPrime configuration
 #
-# Edit this file before running the pipeline.
-# All other parameters are fixed in the workflow itself.
+# Edit this file before running the pipeline. Each gene is processed
+# independently and gets its own HTML report.
 # =============================================================================
 
 # -----------------------------------------------------------------------------
 # Required: target organism and genes
 # -----------------------------------------------------------------------------
 
-# Bacterial genus name, exactly as recognised by NCBI
+# Bacterial genus name, exactly as recognized by NCBI.
 # Examples: Bacillus, Pseudomonas, Listeria, Streptomyces
 genus: Borrelia
 
-# One or more housekeeping gene names
-# Each gene is processed in parallel; if more than one is given,
-# a cross-gene comparison report is also produced.
+# One or more housekeeping gene names.
 genes:
   - recG
 
-# Optional: alternative names for a gene, searched in addition to the gene name.
-# Useful when annotation varies across genomes. Example:
-#   gene_aliases:
-#     tuf:
-#       - tsf
-#     16S:
-#       - "16S ribosomal RNA"
+# Optional alternative names for each gene, searched in addition to the primary
+# gene name. Useful when annotations vary across genomes.
+#
+# Example:
+# gene_aliases:
+#   tuf:
+#     - tsf
+#   16S:
+#     - "16S ribosomal RNA"
 gene_aliases: {}
 
 # -----------------------------------------------------------------------------
 # Genome download
 # -----------------------------------------------------------------------------
 
-# ncbi-genome-download assembly level filter
+# ncbi-genome-download assembly level filter.
 # Options: complete, chromosome, scaffold, contig
-# "complete" is recommended for reliable gene extraction
+# "complete" is recommended for reliable gene extraction.
 assembly_level: complete
 
 # -----------------------------------------------------------------------------
 # Primer design parameters
 # -----------------------------------------------------------------------------
 
-# Primer length in bp
+# Primer length in bp.
 primer_len: 20
 
-# Amplicon size range (bp) — distance between forward and reverse primer start positions
+# Amplicon size range in bp. This is the distance between forward and reverse
+# primer start positions in the alignment.
 amplicon_min_len: 300
 amplicon_max_len: 1000
 
 # Shannon entropy cutoff for a primer window to be considered conserved.
-# Lower = more stringent. If no primers are found, raise this value.
-# Use div_cut_per_gene to override for individual genes (e.g. rRNA vs CDS).
+# Lower is more stringent. If no primers are found, raise this value.
 div_cut: 2.0
-div_cut_per_gene: {}
-# Example:
-#   div_cut_per_gene:
-#     16S: 3.0
-#     rpoB: 1.5
 
-# Maximum allowed GC% difference between the two primers in a pair
+# Optional per-gene diversity cutoff overrides.
+#
+# Example:
+# div_cut_per_gene:
+#   16S: 3.0
+#   rpoB: 1.5
+div_cut_per_gene: {}
+
+# Maximum allowed GC fraction difference between forward and reverse primers.
 GC_tol: 0.1
 
-# Minimum allele frequency for a base to be included in the degenerate (IUPAC)
-# primer code.  Lower = more degenerate positions.
+# Minimum allele frequency for a base to be included in the degenerate IUPAC
+# primer code. Lower values allow more degenerate positions.
 min_allele_freq: 0.05
 
-# Maximum allowed degeneracy fold per primer.  A fold of 16 means, e.g.,
-# up to 4 degenerate 2-way positions or 2 degenerate 4-way positions.
+# Maximum allowed degeneracy fold per primer. A fold of 16 means, for example,
+# up to four degenerate 2-way positions or two degenerate 4-way positions.
 max_degeneracy: 16
 
 # -----------------------------------------------------------------------------
-# Primer quality filters — hairpin / dimer / 3'-end stability
-# Pairs where any ΔG falls below (more negative than) the threshold are dropped.
-# Set all to -99 to disable filtering.  More negative ΔG = stronger secondary
-# structure = worse.
+# Primer quality filters
 # -----------------------------------------------------------------------------
 
-max_hairpin_dg: 0.0         # kcal/mol; 0 = no hairpin tolerated
-max_homodimer_dg: -6.0      # kcal/mol; -6 = weak homodimer tolerated
-max_heterodimer_dg: -6.0    # kcal/mol; -6 = weak heterodimer tolerated
-max_3end_dg: -8.0           # kcal/mol; -8 = moderately stable 3' end tolerated
+# Hairpin, dimer, and 3'-end stability thresholds in kcal/mol.
+# Pairs where any dG is lower than the threshold are dropped.
+# More negative dG means stronger secondary structure, which is worse.
+# Set all thresholds to -99 to effectively disable filtering.
+max_hairpin_dg: 0.0
+max_homodimer_dg: -6.0
+max_heterodimer_dg: -6.0
+max_3end_dg: -8.0
 
 # -----------------------------------------------------------------------------
 # In silico PCR validation
 # -----------------------------------------------------------------------------
 
-# Number of mismatches allowed when matching primers against genomes
-# (seqkit amplicon -m). 3 ≈ 15% tolerance for a 20 bp primer, a realistic
-# value for cross-species amplification. Lower = stricter, higher = more permissive.
+# Mismatches allowed by seqkit amplicon. For a 20 bp primer, 3 mismatches is
+# about 15% tolerance and is useful for cross-species amplification.
 pcr_mismatch: 3

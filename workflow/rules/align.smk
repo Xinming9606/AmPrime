@@ -23,19 +23,8 @@ rule align:
         str(RESULTS / "benchmarks" / "align" / "{gene}.txt")
     shell:
         """
-        mkdir -p $(dirname {output})
-
-        n_in=$(grep -c "^>" {input} 2>/dev/null || true)
-        n_in=${{n_in:-0}}
-        if [ "$n_in" -lt 2 ]; then
-            cp {input} {output}
-            echo "Only $n_in centroid sequence(s); skipped MUSCLE alignment" >> {log}
-            exit 0
-        fi
-
-        muscle -align {input} -output {output} 2>> {log}
-
-        n=$(grep -c "^>" {output} 2>/dev/null || true)
-        n=${{n:-0}}
-        echo "Aligned $n sequences" >> {log}
+        python workflow/scripts/align_fasta.py \
+            --input {input:q} \
+            --output {output:q} \
+            --log {log:q}
         """

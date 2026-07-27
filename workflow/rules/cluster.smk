@@ -25,23 +25,9 @@ rule cluster:
         str(RESULTS / "benchmarks" / "cluster" / "{gene}.txt")
     shell:
         """
-        mkdir -p $(dirname {output})
-
-        n_in=$(grep -c "^>" {input} 2>/dev/null || true)
-        n_in=${{n_in:-0}}
-        if [ "$n_in" -eq 0 ]; then
-            : > {output}
-            echo "No input sequences; wrote empty centroids FASTA" >> {log}
-            exit 0
-        fi
-
-        vsearch --cluster_fast {input} \
-            --strand both \
-            --id {params.identity} \
-            --centroids {output} \
-            2>> {log}
-
-        n_out=$(grep -c "^>" {output} 2>/dev/null || true)
-        n_out=${{n_out:-0}}
-        echo "Clustered $n_in sequences into $n_out centroids" >> {log}
+        python workflow/scripts/cluster_fasta.py \
+            --input {input:q} \
+            --output {output:q} \
+            --identity {params.identity} \
+            --log {log:q}
         """

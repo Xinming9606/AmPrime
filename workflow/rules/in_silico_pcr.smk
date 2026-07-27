@@ -18,9 +18,7 @@ rule in_silico_pcr:
         str(PRIMERS / "{gene}_amplicons.tsv")
     params:
         gene             = lambda wc: wc.gene,
-        mismatch         = config["pcr_mismatch"],
-        amplicon_min_len = config["amplicon_min_len"],
-        amplicon_max_len = config["amplicon_max_len"]
+        config_file = "config/config.yaml"
     log:
         str(RESULTS / "logs" / "in_silico_pcr" / "{gene}.log")
     benchmark:
@@ -32,8 +30,6 @@ rule in_silico_pcr:
             --genome-dir {input.genome_dir:q} \
             --out-tsv {output:q} \
             --gene {params.gene:q} \
-            --mismatch {params.mismatch} \
-            --amplicon-min-len {params.amplicon_min_len} \
-            --amplicon-max-len {params.amplicon_max_len} \
+            --config {params.config_file:q} \
             --log {log:q}
         """

@@ -4,35 +4,21 @@
 # Per-gene rule: extracts target gene sequences from all downloaded CDS and
 # RNA FASTA files, producing a single merged FASTA per gene.
 #
-# Depends on: checkpoint download_genomes. The input function forces the
-# checkpoint to complete (establishing the DAG dependency). The cds/rna
-# directory paths are deterministic (results/{genus}/genomes/{cds,rna}) and
-# are passed as plain-string params built from the global path variables, so
-# the script never has to introspect checkpoint output or resolved inputs.
+# Depends on: rule download_genomes. Genome directories and config are passed
+# to the CLI as plain paths.
 #
 # Output : results/{genus}/extracted/{gene}.fasta   [temp]
 # =============================================================================
 
-import shlex
-
-def trigger_download(wildcards):
-    # Force the checkpoint to complete; return its outputs purely to
-    # establish the DAG edge. We do not rely on the return value downstream.
-    co = checkpoints.download_genomes.get(**wildcards).output
-    return [str(co.cds), str(co.rna)]
-
 rule extract_gene:
     input:
-        trigger_download
+        cds = str(GENOMES_CDS),
+        rna = str(GENOMES_RNA)
     output:
         temp(str(EXTRACTED / "{gene}.fasta"))
     params:
-        gene    = lambda wc: wc.gene,
-        aliases = lambda wc: config.get("gene_aliases", {}).get(wc.gene, []),
-        alias_args = lambda wc: " ".join(
-            "--alias " + shlex.quote(str(alias))
-            for alias in config.get("gene_aliases", {}).get(wc.gene, [])
-        ),
+        gene = lambda wc: wc.gene,
+        config_file = "config/config.yaml",
         cds_dir = str(GENOMES_CDS),
         rna_dir = str(GENOMES_RNA)
     log:
@@ -46,6 +32,6 @@ rule extract_gene:
             --rna-dir {params.rna_dir:q} \
             --out-fasta {output:q} \
             --gene {params.gene:q} \
-            {params.alias_args} \
+            --config {params.config_file:q} \
             --log {log:q}
         """

@@ -1,88 +1,125 @@
 # AmPrime
 
-> Design and validate amplicon-sequencing primers for **any bacterial genus**
-> and **any set of housekeeping genes** — straight from public NCBI genomes.
+AmPrime designs and validates amplicon-sequencing primer pairs for bacterial
+housekeeping genes using public NCBI genomes.
 
-A reproducible primer-design pipeline that turns a genus name and a list of
-genes into ranked, in-silico-validated primer pairs, each with a self-contained
-HTML report. Snakemake is used as a thin scheduler; the per-step Python scripts
-are ordinary command-line tools.
+You give it:
 
-## How it works
+- a bacterial genus, such as `Borrelia`
+- one or more target genes, such as `recG`, `clpA`, or an MLST gene set
 
-Give it a genus (e.g. `Borrelia`) and one or more genes (e.g. the eight-gene
-MLST scheme). For **each gene independently**, the pipeline:
+It returns one self-contained HTML report per gene with the recommended primer
+pair, in silico PCR validation, sequence diversity plot, and all candidate
+primer pairs.
+
+## When To Use
+
+Use AmPrime when you want a reproducible first-pass primer design workflow for
+a bacterial genus, especially when you want primers that should work across
+many genomes within that genus.
+
+It is not a full specificity checker yet. The current pipeline checks whether
+the top primer pair amplifies genomes inside the target genus, but it does not
+test off-target amplification outside the genus.
+
+## How It Works
+
+For each gene independently, AmPrime runs this pipeline:
 
 ```mermaid
 flowchart LR
     A[Download genomes<br/>NCBI] --> B[Extract gene<br/>CDS + rRNA]
     B --> C[Dereplicate<br/>vsearch 97%]
     C --> D[Align<br/>MUSCLE]
-    D --> E[Design primers<br/>Shannon entropy scan]
-    E --> F[In silico PCR<br/>seqkit amplicon]
-    F --> G[HTML report]
+    D --> E[Design primers<br/>entropy scan]
+    E --> F[Quality filter<br/>hairpin + dimer]
+    F --> G[In silico PCR<br/>seqkit amplicon]
+    G --> H[HTML report]
 ```
 
-1. **Download** every assembly for the genus (`ncbi-genome-download`), keeping
-   the genomic, CDS, and rRNA FASTA for each.
-2. **Extract** the target gene from the CDS / rRNA FASTA of every genome.
-   Missing genes are warned about and skipped, never fatal.
-3. **Dereplicate** near-identical sequences at 97% identity (`vsearch`) so the
-   alignment is not dominated by redundant strains.
-4. **Align** the representatives (`MUSCLE`).
-5. **Design primers** by scanning the alignment for conserved windows (low
-   Shannon entropy) that flank a variable region of the right amplicon size,
-   scoring each pair on conservation and GC balance.
-6. **Validate** the top pair by in silico PCR against the *full* genome set,
-   reporting how many genomes amplify and the product size.
-7. **Report** everything as a single browsable HTML file per gene.
+The main idea is simple:
 
-Genes run in parallel — point it at eight genes and it builds eight reports.
+1. Download genomic, CDS, and RNA FASTA files for the target genus.
+2. Extract the target gene from CDS/RNA annotations.
+3. Dereplicate near-identical sequences so redundant strains do not dominate.
+4. Align representative sequences.
+5. Find conserved primer windows that flank a variable amplicon region.
+6. Filter primer pairs for simple secondary-structure risks.
+7. Validate the top pair against full genomes with `seqkit amplicon`.
+8. Write a browsable HTML report.
 
-## Quick start
+Missing genes are handled gracefully. If a gene cannot be found, the pipeline
+continues and writes a report showing that no candidates were available.
+
+## Quick Start
 
 ```bash
-# 1. Clone
+# 1. Clone the repository
 git clone git@github.com:Xinming9606/AmPrime.git
 cd AmPrime
 
-# 2. Create the environment (one env, all tools)
+# 2. Create and activate the environment
 micromamba env create -f workflow/envs/environment.yaml
 micromamba activate primer-pipeline
 
-# 3. Edit config/config.yaml — set your genus and genes
+# 3. Edit config/config.yaml
+# Set your genus, genes, and optional gene aliases.
 
-# 4. Check the plan, then run
-snakemake -n            # dry-run: shows the DAG without executing
-snakemake --cores 4     # real run
+# 4. Preview the work to be done
+snakemake -n
+
+# 5. Run the pipeline
+snakemake --cores 4
 ```
 
-Outputs land in `results/<genus>/reports/<gene>_report.html`.
+Reports are written to:
+
+```text
+results/<genus>/reports/<gene>_report.html
+```
+
+Open the HTML file in a browser to inspect the recommended primer pair and
+validation summary.
 
 ## Configuration
 
-Everything is controlled from `config/config.yaml`:
+All user-facing settings live in [config/config.yaml](config/config.yaml).
+
+Minimal example:
 
 ```yaml
-genus: Borrelia          # any NCBI bacterial genus
-genes:                   # one or more; each runs independently
-  - clpA
+genus: Borrelia
+
+genes:
   - recG
+  - clpA
   - uvrA
 
-assembly_level: complete # complete | chromosome | scaffold | contig
+assembly_level: complete
 
-primer_len: 20           # primer length (bp)
-amplicon_min_len: 300    # target amplicon size range (bp)
+primer_len: 20
+amplicon_min_len: 300
 amplicon_max_len: 1000
-div_cut: 2.0             # max Shannon entropy for a conserved primer window
-                         # (raise if no primers are found)
-GC_tol: 0.1              # max GC% difference within a primer pair
+div_cut: 2.0
+GC_tol: 0.1
 
-pcr_mismatch: 3          # mismatches allowed in in silico PCR
+pcr_mismatch: 3
 ```
 
-If a gene's annotation name varies across genomes, add aliases:
+Useful options:
+
+| Setting | Meaning |
+| --- | --- |
+| `genus` | Bacterial genus name recognized by NCBI. |
+| `genes` | One or more gene names. Each gene is processed independently. |
+| `assembly_level` | NCBI assembly level: `complete`, `chromosome`, `scaffold`, or `contig`. |
+| `primer_len` | Primer length in bp. |
+| `amplicon_min_len`, `amplicon_max_len` | Target amplicon size range. |
+| `div_cut` | Maximum Shannon entropy allowed for conserved primer windows. Raise it if no primers are found. |
+| `GC_tol` | Maximum GC fraction difference between forward and reverse primers. |
+| `pcr_mismatch` | Mismatches allowed by `seqkit amplicon`. |
+
+If a gene is annotated under different names across genomes, add aliases:
 
 ```yaml
 gene_aliases:
@@ -92,62 +129,117 @@ gene_aliases:
     - "16S ribosomal RNA"
 ```
 
-## Output
+You can also override the diversity cutoff for specific genes:
 
-For each gene, under `results/<genus>/`:
+```yaml
+div_cut_per_gene:
+  16S: 3.0
+  rpoB: 1.5
+```
 
-| File                           | What it contains                                                                |
-| ------------------------------ | ------------------------------------------------------------------------------- |
-| `reports/<gene>_report.html`   | The deliverable: top pair, PCR validation, diversity plot, full candidate table |
-| `primers/<gene>_primers.tsv`   | All candidate primer pairs, ranked by score                                     |
-| `primers/<gene>_amplicons.tsv` | In silico PCR result for the top pair                                           |
-| `primers/<gene>_diversity.png` | Per-position entropy with primer sites marked                                   |
+## Output Files
 
-## Repository layout
+For each gene, outputs are written under `results/<genus>/`.
+
+| File | Contents |
+| --- | --- |
+| `reports/<gene>_report.html` | Main deliverable: recommendation, PCR validation, plot, and candidate table. |
+| `primers/<gene>_primers.tsv` | Filtered candidate primer pairs ranked by score. |
+| `primers/<gene>_amplicons.tsv` | In silico PCR result for the top primer pair. |
+| `primers/<gene>_diversity.png` | Per-position Shannon entropy plot with top primer sites marked. |
+| `logs/...` | Per-step logs for debugging. |
+| `benchmarks/...` | Snakemake benchmark files. |
+
+## Project Layout
 
 ```text
 AmPrime/
+|-- Snakefile
 |-- config/
-|   `-- config.yaml              # the only file you edit
+|   `-- config.yaml
 |-- workflow/
-|   |-- Snakefile                # orchestrator: config, paths, includes
-|   |-- rules/                   # one .smk module per step
+|   |-- Snakefile
+|   |-- rules/
 |   |   |-- download_genomes.smk
 |   |   |-- extract_gene.smk
 |   |   |-- cluster.smk
 |   |   |-- align.smk
 |   |   |-- design_primers.smk
+|   |   |-- check_primers.smk
 |   |   |-- in_silico_pcr.smk
 |   |   `-- reports.smk
-|   |-- scripts/                 # standalone CLIs called by the rules
+|   |-- scripts/
+|   |   |-- download_genomes.py
 |   |   |-- extract_gene.py
+|   |   |-- cluster_fasta.py
+|   |   |-- align_fasta.py
 |   |   |-- design_primers.py
 |   |   |-- check_primers.py
 |   |   |-- in_silico_pcr.py
 |   |   |-- gene_report.py
 |   |   `-- gene_report.html
 |   `-- envs/
-|       `-- environment.yaml     # all dependencies, one environment
-`-- results/                     # generated output (git-ignored)
+|       `-- environment.yaml
+`-- results/
 ```
+
+## Design Notes
+
+Snakemake is intentionally kept as a thin scheduler. It manages dependencies,
+parallel execution, logs, benchmarks, and resumability. The actual work is done
+by standalone Python command-line tools in `workflow/scripts/`.
+
+This keeps each step easy to test and debug. For example:
+
+```bash
+python workflow/scripts/extract_gene.py --help
+python workflow/scripts/design_primers.py --help
+python workflow/scripts/gene_report.py --help
+```
+
+## Troubleshooting
+
+If the dry run fails, check that you are running from the repository root:
+
+```bash
+snakemake -n
+```
+
+If no primers are found, try one or more of the following:
+
+- raise `div_cut`
+- relax `GC_tol`
+- add gene aliases under `gene_aliases`
+- use a less restrictive `assembly_level`
+- inspect the per-gene logs under `results/<genus>/logs/`
+
+If genome download fails, confirm that the genus name is recognized by NCBI and
+that your internet connection is available.
+
+If `MUSCLE` is slow, start with a small genus or a stricter assembly level such
+as `complete`.
 
 ## Requirements
 
-A conda-compatible package manager (`conda`, `mamba`, or `micromamba`) and an
-internet connection for the genome download step. Everything else - Snakemake,
-`ncbi-genome-download`, `vsearch`, `MUSCLE`, `seqkit`, and Python reporting
-packages - is pinned in `workflow/envs/environment.yaml`.
+You need a conda-compatible package manager such as `conda`, `mamba`, or
+`micromamba`, plus an internet connection for the genome download step.
 
-## Notes & limitations
+All workflow dependencies are pinned in:
 
-- **Specificity against off-target taxa is not yet checked.** The pipeline
-  confirms primers amplify within the target genus; it does not test whether
-  they also amplify outside it.
-- Primer windows are taken from the consensus; degenerate-base handling is
-  conservative.
-- `MUSCLE` can be slow on genera with thousands of assemblies. Start with a
-  small genus to validate your settings.
+```text
+workflow/envs/environment.yaml
+```
+
+The environment includes Snakemake, Python, Biopython, NumPy, Matplotlib,
+`ncbi-genome-download`, `vsearch`, `MUSCLE`, `seqkit`, and Python `markdown`.
+
+## Limitations
+
+- Off-target specificity outside the target genus is not checked yet.
+- Primer windows are derived from the alignment consensus.
+- Degenerate-base handling is conservative.
+- Very large genera can take a long time to download and align.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
