@@ -22,6 +22,32 @@ import os
 from config_schema import load_config_file
 
 # ---------------------------------------------------------------------------
+# IUPAC ambiguity codes
+# ---------------------------------------------------------------------------
+IUPAC_BASES = {
+    "A": frozenset("A"),
+    "C": frozenset("C"),
+    "G": frozenset("G"),
+    "T": frozenset("T"),
+    "R": frozenset("AG"),
+    "Y": frozenset("CT"),
+    "M": frozenset("AC"),
+    "K": frozenset("GT"),
+    "S": frozenset("CG"),
+    "W": frozenset("AT"),
+    "B": frozenset("CGT"),
+    "D": frozenset("AGT"),
+    "H": frozenset("ACT"),
+    "V": frozenset("ACG"),
+    "N": frozenset("ACGT"),
+}
+
+IUPAC_COMPLEMENT = str.maketrans(
+    "ACGTRYMKSWHBVDNacgtrymkswhbvdn",
+    "TGCAYRKMSWDVBHNtgcayrkmswdvbhn",
+)
+
+# ---------------------------------------------------------------------------
 # SantaLucia 1998 unified nearest-neighbour dG (kcal/mol, 37 C, 1 M NaCl)
 # ---------------------------------------------------------------------------
 NN_DG = {
@@ -54,11 +80,42 @@ MIN_LOOP = 3  # minimum loop size for hairpin
 # Building blocks
 # ---------------------------------------------------------------------------
 def _complement(base: str) -> str:
-    return {"A": "T", "T": "A", "C": "G", "G": "C"}.get(base, base)
+    return base.translate(IUPAC_COMPLEMENT)
 
 
 def _reverse_complement(seq: str) -> str:
-    return "".join(_complement(b) for b in reversed(seq))
+    return seq.translate(IUPAC_COMPLEMENT)[::-1]
+
+
+def _base_set(base: str):
+    return IUPAC_BASES.get(base.upper(), frozenset())
+
+
+def _compatible_after_reverse_complement(base_a: str, base_b_rc: str) -> bool:
+    """True when two 5' to 3' bases can pair in an antiparallel duplex."""
+    return bool(_base_set(base_a) & _base_set(base_b_rc))
+
+
+def _terminal_init_dg(base: str) -> float:
+    bases = _base_set(base)
+    values = []
+    if bases & frozenset("AT"):
+        values.append(INIT_AT)
+    if bases & frozenset("GC"):
+        values.append(INIT_GC)
+    return min(values) if values else 0.0
+
+
+def _nearest_neighbor_dg(dimer: str) -> float:
+    """Most stable canonical nearest-neighbour value compatible with dimer."""
+    left, right = dimer[0], dimer[1]
+    values = [
+        dg
+        for a in _base_set(left)
+        for b in _base_set(right)
+        if (dg := NN_DG.get(a + b)) is not None
+    ]
+    return min(values) if values else 0.0
 
 
 def _duplex_dg(seq_5p: str) -> float:
@@ -70,9 +127,9 @@ def _duplex_dg(seq_5p: str) -> float:
     n = len(seq_5p)
     if n < 2:
         return 0.0
-    dg = INIT_GC if seq_5p[0] in "GC" else INIT_AT
+    dg = _terminal_init_dg(seq_5p[0])
     for i in range(n - 1):
-        dg += NN_DG.get(seq_5p[i : i + 2], 0)
+        dg += _nearest_neighbor_dg(seq_5p[i : i + 2])
     if seq_5p == _reverse_complement(seq_5p):
         dg += SYMMETRY_DG
     return dg
@@ -85,23 +142,37 @@ def _align_dg(seq_a: str, seq_b_rc: str) -> float:
     """Best (most negative) dG of antiparallel alignment of seq_a vs seq_b_rc.
 
     seq_b_rc is the reverse complement of some other sequence in 5' to 3'.
-    We slide the two 5' to 3' strands across each other and score every
-    overlapping region.
+    We slide the two 5' to 3' strands across each other and score only
+    contiguous compatible stems.
     """
     best = 0.0
+    seq_a = seq_a.upper()
+    seq_b_rc = seq_b_rc.upper()
     la, lb = len(seq_a), len(seq_b_rc)
 
     for offset in range(-(lb - 1), la):
         if offset >= 0:
-            a0, _, n = offset, 0, min(la - offset, lb)
+            a0, b0, n = offset, 0, min(la - offset, lb)
         else:
-            a0, _, n = 0, -offset, min(la, lb + offset)
+            a0, b0, n = 0, -offset, min(la, lb + offset)
 
         if n < MIN_STEM:
             continue
 
-        dg = _duplex_dg(seq_a[a0 : a0 + n])
-        best = min(best, dg)
+        run = []
+        for k in range(n):
+            base_a = seq_a[a0 + k]
+            base_b_rc = seq_b_rc[b0 + k]
+            if _compatible_after_reverse_complement(base_a, base_b_rc):
+                run.append(base_a)
+                continue
+
+            if len(run) >= MIN_STEM:
+                best = min(best, _duplex_dg("".join(run)))
+            run = []
+
+        if len(run) >= MIN_STEM:
+            best = min(best, _duplex_dg("".join(run)))
 
     return round(best, 2)
 
@@ -124,9 +195,9 @@ def calc_hairpin_dg(seq: str) -> float:
 
     Enumerates all possible stem-start (i), stem-end-start (j) and stem
     length (k) combinations with a minimum loop of MIN_LOOP bases between the
-    two stem halves. Because primer oligos are short (15-35 nt), the
-    triple-loop is harmless.
+    two stem halves. Only genuinely complementary stems are scored.
     """
+    seq = seq.upper()
     n = len(seq)
     best = 0.0
 
@@ -134,10 +205,14 @@ def calc_hairpin_dg(seq: str) -> float:
         max_i = n - 2 * stem_len - MIN_LOOP
         for i in range(max_i + 1):
             j_min = i + stem_len + MIN_LOOP
-            for _ in range(j_min, n - stem_len + 1):
+            for j in range(j_min, n - stem_len + 1):
                 stem5 = seq[i : i + stem_len]
-                dg = _duplex_dg(stem5)
-                best = min(best, dg)
+                stem3_rc = _reverse_complement(seq[j : j + stem_len])
+                if all(
+                    _compatible_after_reverse_complement(a, b)
+                    for a, b in zip(stem5, stem3_rc)
+                ):
+                    best = min(best, _duplex_dg(stem5))
 
     return round(best, 2)
 

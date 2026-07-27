@@ -53,7 +53,10 @@ def load_config_file(path):
     import yaml
 
     with open(path, encoding="utf-8") as fh:
-        return apply_config_defaults(yaml.safe_load(fh) or {})
+        cfg = apply_config_defaults(yaml.safe_load(fh) or {})
+
+    validate_config(cfg)
+    return cfg
 
 
 def validate_config(cfg):
