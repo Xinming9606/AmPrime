@@ -13,6 +13,8 @@
 # Output : results/{genus}/extracted/{gene}.fasta   [temp]
 # =============================================================================
 
+import shlex
+
 def trigger_download(wildcards):
     # Force the checkpoint to complete; return its outputs purely to
     # establish the DAG edge. We do not rely on the return value downstream.
@@ -27,11 +29,23 @@ rule extract_gene:
     params:
         gene    = lambda wc: wc.gene,
         aliases = lambda wc: config.get("gene_aliases", {}).get(wc.gene, []),
+        alias_args = lambda wc: " ".join(
+            "--alias " + shlex.quote(str(alias))
+            for alias in config.get("gene_aliases", {}).get(wc.gene, [])
+        ),
         cds_dir = str(GENOMES_CDS),
         rna_dir = str(GENOMES_RNA)
     log:
         str(RESULTS / "logs" / "extract_gene" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "extract_gene" / "{gene}.txt")
-    script:
-        "../scripts/extract_gene.py"
+    shell:
+        """
+        python workflow/scripts/extract_gene.py \
+            --cds-dir {params.cds_dir:q} \
+            --rna-dir {params.rna_dir:q} \
+            --out-fasta {output:q} \
+            --gene {params.gene:q} \
+            {params.alias_args} \
+            --log {log:q}
+        """

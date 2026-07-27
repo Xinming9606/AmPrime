@@ -3,7 +3,7 @@
 #
 # For a given bacterial genus and one or more housekeeping genes:
 #   download genomes -> extract gene -> dereplicate -> align ->
-#   design primers -> in silico PCR validation -> per-gene HTML report
+#   design primers -> quality filter -> in silico PCR -> per-gene HTML report
 #
 # This Snakefile loads config, defines ALL shared path variables, and
 # includes the rule modules under workflow/rules/. Rule bodies live in their
@@ -47,6 +47,7 @@ include: "rules/extract_gene.smk"
 include: "rules/cluster.smk"
 include: "rules/align.smk"
 include: "rules/design_primers.smk"
+include: "rules/check_primers.smk"
 include: "rules/in_silico_pcr.smk"
 include: "rules/reports.smk"
 

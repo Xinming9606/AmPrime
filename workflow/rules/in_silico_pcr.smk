@@ -25,5 +25,15 @@ rule in_silico_pcr:
         str(RESULTS / "logs" / "in_silico_pcr" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "in_silico_pcr" / "{gene}.txt")
-    script:
-        "../scripts/in_silico_pcr.py"
+    shell:
+        """
+        python workflow/scripts/in_silico_pcr.py \
+            --primers-tsv {input.primers:q} \
+            --genome-dir {input.genome_dir:q} \
+            --out-tsv {output:q} \
+            --gene {params.gene:q} \
+            --mismatch {params.mismatch} \
+            --amplicon-min-len {params.amplicon_min_len} \
+            --amplicon-max-len {params.amplicon_max_len} \
+            --log {log:q}
+        """
