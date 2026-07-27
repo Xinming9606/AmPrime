@@ -16,10 +16,5 @@ dependencies:
   # genome download
   - ncbi-genome-download
 
-  # sequence tools
-  - vsearch
-  - muscle>=5
-  - seqkit
-
   # reporting
   - markdown

@@ -29,11 +29,11 @@ For each gene independently, AmPrime runs this pipeline:
 ```mermaid
 flowchart LR
     A[Download genomes<br/>NCBI] --> B[Extract gene<br/>CDS + rRNA]
-    B --> C[Dereplicate<br/>vsearch 97%]
-    C --> D[Align<br/>MUSCLE]
+    B --> C[Dereplicate<br/>Python 97%]
+    C --> D[Align<br/>Python]
     D --> E[Design primers<br/>entropy scan]
     E --> F[Quality filter<br/>hairpin + dimer]
-    F --> G[In silico PCR<br/>seqkit amplicon]
+    F --> G[In silico PCR<br/>Python]
     G --> H[HTML report]
 ```
 
@@ -45,7 +45,7 @@ The main idea is simple:
 4. Align representative sequences.
 5. Find conserved primer windows that flank a variable amplicon region.
 6. Filter primer pairs for simple secondary-structure risks.
-7. Validate the top pair against full genomes with `seqkit amplicon`.
+7. Validate the top pair against full genomes with a Python primer scanner.
 8. Write a browsable HTML report.
 
 Missing genes are handled gracefully. If a gene cannot be found, the pipeline
@@ -58,18 +58,16 @@ continues and writes a report showing that no candidates were available.
 git clone git@github.com:Xinming9606/AmPrime.git
 cd AmPrime
 
-# 2. Create and activate the environment
-micromamba env create -f workflow/envs/environment.yaml
-micromamba activate primer-pipeline
+# 2. Install Pixi if needed: https://pixi.sh
 
-# 3. Edit config/config.yaml
+# 3. Preview the work to be done
+pixi run dry-run
+
+# 4. Edit config/config.yaml
 # Set your genus, genes, and optional gene aliases.
 
-# 4. Preview the work to be done
-snakemake -n
-
 # 5. Run the pipeline
-snakemake --cores 4
+pixi run snakemake --cores 4
 ```
 
 Reports are written to:
@@ -117,7 +115,7 @@ Useful options:
 | `amplicon_min_len`, `amplicon_max_len` | Target amplicon size range. |
 | `div_cut` | Maximum Shannon entropy allowed for conserved primer windows. Raise it if no primers are found. |
 | `GC_tol` | Maximum GC fraction difference between forward and reverse primers. |
-| `pcr_mismatch` | Mismatches allowed by `seqkit amplicon`. |
+| `pcr_mismatch` | Mismatches allowed per primer during in silico PCR. |
 
 If a gene is annotated under different names across genomes, add aliases:
 
@@ -155,8 +153,16 @@ For each gene, outputs are written under `results/<genus>/`.
 ```text
 AmPrime/
 |-- Snakefile
+|-- pixi.toml
+|-- pixi.lock
+|-- .github/
+|   `-- workflows/
 |-- config/
 |   `-- config.yaml
+|-- tools/
+|   |-- compile_project.py
+|   |-- smoke_project.py
+|   `-- package_release.py
 |-- workflow/
 |   |-- Snakefile
 |   |-- rules/
@@ -197,6 +203,29 @@ python workflow/scripts/design_primers.py --help
 python workflow/scripts/gene_report.py --help
 ```
 
+## Development
+
+Pixi is the primary project manager. It creates the conda/bioconda environment
+from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`.
+The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows.
+Intel macOS is not supported. Sequence processing is implemented in Python so
+the workflow does not depend on platform-specific `vsearch`, `MUSCLE`, or
+`seqkit` binaries.
+
+Useful commands:
+
+```bash
+pixi run compile
+pixi run smoke
+pixi run dry-run
+pixi run ci
+pixi run package
+```
+
+The CI workflow runs `pixi run ci` on pushes and pull requests. Pushing a tag
+like `v0.1.0` runs the release workflow, builds source archives under `dist/`,
+and publishes them to GitHub Releases.
+
 ## Troubleshooting
 
 If the dry run fails, check that you are running from the repository root:
@@ -216,22 +245,40 @@ If no primers are found, try one or more of the following:
 If genome download fails, confirm that the genus name is recognized by NCBI and
 that your internet connection is available.
 
-If `MUSCLE` is slow, start with a small genus or a stricter assembly level such
-as `complete`.
+If alignment is slow, start with a small genus or a stricter assembly level
+such as `complete`.
 
 ## Requirements
 
-You need a conda-compatible package manager such as `conda`, `mamba`, or
-`micromamba`, plus an internet connection for the genome download step.
+Use Pixi for the simplest setup:
 
-All workflow dependencies are pinned in:
+```bash
+pixi run ci
+```
+
+The workflow dependencies are declared in:
+
+```text
+pixi.toml
+```
+
+The legacy micromamba/conda environment file is kept for users who prefer that
+tooling:
+
+```bash
+micromamba env create -f workflow/envs/environment.yaml
+micromamba activate primer-pipeline
+snakemake --cores 4
+```
+
+That environment file lives at:
 
 ```text
 workflow/envs/environment.yaml
 ```
 
 The environment includes Snakemake, Python, Biopython, NumPy, Matplotlib,
-`ncbi-genome-download`, `vsearch`, `MUSCLE`, `seqkit`, and Python `markdown`.
+`ncbi-genome-download`, PyYAML, and Python `markdown`.
 
 ## Limitations
 

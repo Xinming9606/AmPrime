@@ -7,6 +7,7 @@ logs/
 results/
 ncbi_genome/
 ncbi_genome_de/
+dist/
 
 # Python
 *.pyc
@@ -25,6 +26,7 @@ __pycache__/
 
 # Conda envs (if created locally inside project)
 .conda/
+.pixi/
 envs/*/
 test_data/
 run_*.log

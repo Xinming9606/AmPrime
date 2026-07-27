@@ -18,6 +18,7 @@
 #   pair_diversity, delta_GC, combined_score
 # =============================================================================
 
+from __future__ import annotations
 
 import argparse
 import csv

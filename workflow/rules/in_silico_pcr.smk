@@ -2,7 +2,7 @@
 # in_silico_pcr.smk
 #
 # Per-gene rule: validates the top-ranked primer pair against the full
-# genome assemblies using seqkit amplicon. Reports amplification rate
+# genome assemblies using the Python primer scanner. Reports amplification rate
 # and mean amplicon length.
 #
 # Inputs : results/{genus}/primers/{gene}_primers.tsv   (from design_primers)
