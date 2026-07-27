@@ -152,6 +152,7 @@ def check_sequence_cli_steps():
     fasta_io = load_script_module("fasta_io")
 
     assert cluster_fasta.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
+    assert align_fasta.choose_backend("python") == "python"
     exact_deduped = cluster_fasta.cluster_records(
         [
             (">a", "ACGT"),
@@ -215,6 +216,8 @@ def check_sequence_cli_steps():
                 str(centroids),
                 "--output",
                 str(aligned),
+                "--backend",
+                "auto",
                 "--log",
                 str(align_log),
             ],

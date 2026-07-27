@@ -2,23 +2,27 @@
 # =============================================================================
 # align_fasta.py
 #
-# Align centroid FASTA records with a small cross-platform Python center-star
-# aligner. Inputs with fewer than two records are copied through unchanged so
-# downstream reporting can continue.
+# Align centroid FASTA records. The default backend is a small cross-platform
+# Python center-star aligner; optional MAFFT/MUSCLE backends can be used when
+# installed for more reliable multiple sequence alignment.
 # =============================================================================
 
 import argparse
 import logging
 import os
 import shutil
+import subprocess
 import sys
+from pathlib import Path
 from time import perf_counter
 
+from config_schema import load_config_file
 from fasta_io import count_fasta_records, parse_fasta, write_fasta
 
 log = logging.getLogger(__name__)
 
 _PAIRWISE_ALIGNER = None
+ALIGNMENT_BACKENDS = {"python", "auto", "mafft", "muscle"}
 WARN_ALIGNMENT_SEQUENCE_COUNT = 500
 WARN_ALIGNMENT_BP = 2_000_000
 
@@ -120,10 +124,117 @@ def center_star_align(records):
     return list(zip(headers, rows, strict=False))
 
 
+def _first_available_backend():
+    for backend in ["mafft", "muscle"]:
+        if shutil.which(backend):
+            return backend
+    return None
+
+
+def _run_and_log(cmd, stdout=None):
+    log.info("Running: %s", " ".join(str(part) for part in cmd))
+    if stdout is None:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+    else:
+        result = subprocess.run(cmd, stdout=stdout, stderr=subprocess.PIPE, text=True)
+    if result.stdout:
+        log.info(result.stdout.rstrip())
+    if result.stderr:
+        log.info(result.stderr.rstrip())
+    return result
+
+
+def run_mafft(input_path, output_path):
+    exe = shutil.which("mafft")
+    if not exe:
+        raise FileNotFoundError("mafft executable not found")
+
+    with open(output_path, "w", encoding="utf-8") as out_fh:
+        result = _run_and_log([exe, "--auto", input_path], stdout=out_fh)
+    return result.returncode == 0 and os.path.getsize(output_path) > 0
+
+
+def run_muscle(input_path, output_path):
+    exe = shutil.which("muscle")
+    if not exe:
+        raise FileNotFoundError("muscle executable not found")
+
+    output_tmp = Path(output_path).with_suffix(Path(output_path).suffix + ".tmp")
+    commands = [
+        [exe, "-align", input_path, "-output", str(output_tmp)],
+        [exe, "-in", input_path, "-out", str(output_tmp)],
+    ]
+    for cmd in commands:
+        if output_tmp.exists():
+            output_tmp.unlink()
+        result = _run_and_log(cmd)
+        if (
+            result.returncode == 0
+            and output_tmp.exists()
+            and output_tmp.stat().st_size
+        ):
+            os.replace(output_tmp, output_path)
+            return True
+
+    if output_tmp.exists():
+        output_tmp.unlink()
+    return False
+
+
+def run_external_alignment(backend, input_path, output_path):
+    runners = {
+        "mafft": run_mafft,
+        "muscle": run_muscle,
+    }
+    return runners[backend](input_path, output_path)
+
+
+def choose_backend(requested):
+    if requested == "auto":
+        backend = _first_available_backend()
+        if backend:
+            log.info("alignment_backend=auto selected %s", backend)
+            return backend
+        log.warning("alignment_backend=auto found no MAFFT/MUSCLE; using python")
+        return "python"
+    return requested
+
+
+def align_records(records, input_path, output_path, requested_backend):
+    backend = choose_backend(requested_backend)
+    if backend == "python":
+        aligned = center_star_align(records)
+        write_fasta(aligned, output_path)
+        return "python"
+
+    try:
+        ok = run_external_alignment(backend, input_path, output_path)
+    except FileNotFoundError as exc:
+        if requested_backend == "auto":
+            log.warning("%s; falling back to python", exc)
+            aligned = center_star_align(records)
+            write_fasta(aligned, output_path)
+            return "python"
+        raise SystemExit(str(exc)) from exc
+
+    if ok:
+        return backend
+
+    if requested_backend == "auto":
+        log.warning("%s alignment failed; falling back to python", backend)
+        aligned = center_star_align(records)
+        write_fasta(aligned, output_path)
+        return "python"
+
+    raise SystemExit(f"{backend} alignment failed; see log for command output")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Align FASTA records.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--config", help="Optional AmPrime config.yaml")
+    parser.add_argument("--backend", choices=sorted(ALIGNMENT_BACKENDS))
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -132,6 +243,13 @@ def main():
     args = parse_args()
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
+
+    cfg = load_config_file(args.config) if args.config else {}
+    requested_backend = args.backend or cfg.get("alignment_backend", "python")
+    if requested_backend not in ALIGNMENT_BACKENDS:
+        raise SystemExit(
+            "alignment backend must be one of: auto, mafft, muscle, python"
+        )
 
     started = perf_counter()
     records = list(parse_fasta(args.input))
@@ -156,19 +274,20 @@ def main():
             "first-pass screening and may be slow or less accurate than a full MSA."
         )
 
-    aligned = center_star_align(records)
-    write_fasta(aligned, args.output)
+    backend_used = align_records(records, args.input, args.output, requested_backend)
 
     n_out = count_fasta_records(args.output)
     elapsed = perf_counter() - started
-    if len({len(seq) for _, seq in records}) == 1:
+    if backend_used == "python" and len({len(seq) for _, seq in records}) == 1:
         log.info(
             "All %d sequences have equal length; skipped pairwise alignment in %.2f s",
             n_out,
             elapsed,
         )
     else:
-        log.info("Aligned %d sequences in %.2f s", n_out, elapsed)
+        log.info(
+            "Aligned %d sequences with %s in %.2f s", n_out, backend_used, elapsed
+        )
     return 0
 
 

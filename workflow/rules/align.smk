@@ -1,9 +1,9 @@
 # =============================================================================
 # align.smk
 #
-# Per-gene rule: multiple sequence alignment of the clustered centroids
-# using a Python center-star aligner. The alignment feeds design_primers.py
-# for consensus and Shannon-entropy calculation.
+# Per-gene rule: multiple sequence alignment of the clustered centroids. The
+# default backend is Python for cross-platform installs; config.yaml can select
+# auto/MAFFT/MUSCLE when external aligners are available.
 #
 # Input  : results/{genus}/extracted/{gene}.centroids.fasta  [temp, from cluster]
 # Output : results/{genus}/aligned/{gene}.aln                [temp]
@@ -17,6 +17,8 @@ rule align:
         str(EXTRACTED / "{gene}.centroids.fasta")
     output:
         temp(str(ALIGNED / "{gene}.aln"))
+    params:
+        config_file = "config/config.yaml"
     log:
         str(RESULTS / "logs" / "align" / "{gene}.log")
     benchmark:
@@ -26,5 +28,6 @@ rule align:
         python workflow/scripts/align_fasta.py \
             --input {input:q} \
             --output {output:q} \
+            --config {params.config_file:q} \
             --log {log:q}
         """

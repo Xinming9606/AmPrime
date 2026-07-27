@@ -1,4 +1,4 @@
-name: primer-pipeline
+name: amprime
 channels:
   - conda-forge
   - bioconda
@@ -6,7 +6,7 @@ dependencies:
   # pipeline runner
   - snakemake-minimal>=8
 
-  # taxid resolution + gene extraction + primer design
+  # cross-platform Python workflow implementation
   - python=3.12
   - biopython
   - numpy
@@ -18,3 +18,7 @@ dependencies:
 
   # reporting
   - markdown
+
+  # Optional alignment backends are intentionally not installed by default.
+  # Set alignment_backend: mafft/muscle/auto only after installing that aligner
+  # separately on your platform.
