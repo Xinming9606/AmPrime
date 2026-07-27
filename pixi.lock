@@ -109,6 +109,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/qhull-2020.2-h434a139_5.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/readline-8.3-h853b02a_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/rpds-py-2026.6.3-py312h192e038_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.16.0-h462bb3b_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/sqlalchemy-2.0.51-py312h5253ce2_0.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/tk-8.6.13-noxft_hd70dff1_3.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/unicodedata2-17.0.1-py312h4c3975b_0.conda
@@ -330,6 +331,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/qhull-2020.2-h420ef59_5.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/readline-8.3-h46df422_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/rpds-py-2026.6.3-py312h8b1d842_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/ruff-0.16.0-h828de30_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/sqlalchemy-2.0.51-py312hb3ab3e3_0.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/tk-8.6.13-hd3d0363_3.conda
       - conda: https://conda.anaconda.org/conda-forge/osx-arm64/unicodedata2-17.0.1-py312h2bbb03f_0.conda
@@ -488,6 +490,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/win-64/pyyaml-6.0.3-py312h05f76fc_1.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/qhull-2020.2-hc790b64_5.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/rpds-py-2026.6.3-py312hd944d65_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/win-64/ruff-0.16.0-h6b72154_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/sqlalchemy-2.0.51-py312he5662c2_0.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tbb-2023.0.0-hd3d4ead_2.conda
       - conda: https://conda.anaconda.org/conda-forge/win-64/tk-8.6.13-h967ab96_3.conda
@@ -1891,6 +1894,21 @@ packages:
   run_exports: {}
   size: 300259
   timestamp: 1782831325201
+- conda: https://conda.anaconda.org/conda-forge/linux-64/ruff-0.16.0-h462bb3b_0.conda
+  noarch: python
+  sha256: a3daa81b2ee835161e59c09efefd81673bb48ffe104f8251b4485301689c7094
+  md5: 2e2d6ede086818186c313dad438ccea5
+  depends:
+  - python
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  constrains:
+  - __glibc >=2.17
+  license: MIT
+  license_family: MIT
+  run_exports: {}
+  size: 9384917
+  timestamp: 1784938279462
 - conda: https://conda.anaconda.org/conda-forge/linux-64/sqlalchemy-2.0.51-py312h5253ce2_0.conda
   sha256: f0ef18298e6fc437006ffb607dbbefa313091576b6e86bdcfdc4f54128249116
   md5: 80530f530854c51df16c11ad2b0cb517
@@ -3991,6 +4009,20 @@ packages:
   run_exports: {}
   size: 286191
   timestamp: 1782831381815
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/ruff-0.16.0-h828de30_0.conda
+  noarch: python
+  sha256: 1da8e618123e797c11ca4e4299102a811dc2b40f2c112dfcc71a149833dab907
+  md5: 98d41831e06234de1baa14f0683b8300
+  depends:
+  - python
+  - __osx >=11.0
+  constrains:
+  - __osx >=11.0
+  license: MIT
+  license_family: MIT
+  run_exports: {}
+  size: 8617591
+  timestamp: 1784938415804
 - conda: https://conda.anaconda.org/conda-forge/osx-arm64/sqlalchemy-2.0.51-py312hb3ab3e3_0.conda
   sha256: 0d4c56239d9476c26da9a241eecfc36d3706f0d6dfac82409903728e6458eefe
   md5: 76eca39100d60d7b0d477138a2aeaa10
@@ -5327,6 +5359,20 @@ packages:
   run_exports: {}
   size: 217956
   timestamp: 1782831653430
+- conda: https://conda.anaconda.org/conda-forge/win-64/ruff-0.16.0-h6b72154_0.conda
+  noarch: python
+  sha256: 5e4e30e92980143458021e8e868eed454602d41ad9580dc972097f3419b49b4f
+  md5: 16e63e3741d3f207df725772d85938fb
+  depends:
+  - python
+  - vc >=14.3,<15
+  - vc14_runtime >=14.44.35208
+  - ucrt >=10.0.20348.0
+  license: MIT
+  license_family: MIT
+  run_exports: {}
+  size: 9842185
+  timestamp: 1784938326190
 - conda: https://conda.anaconda.org/conda-forge/win-64/sqlalchemy-2.0.51-py312he5662c2_0.conda
   sha256: 04591df0e1ff82662f65d5cfb2d643063d1c90f5c962792ccc00db4ca3f22d22
   md5: e1c72593933d9d16f603f67cc1cadf29

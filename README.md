@@ -225,6 +225,8 @@ Useful commands:
 
 ```bash
 pixi run compile
+pixi run lint
+pixi run format-check
 pixi run smoke
 pixi run dry-run
 pixi run pipeline

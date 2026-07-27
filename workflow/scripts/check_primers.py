@@ -210,7 +210,7 @@ def calc_hairpin_dg(seq: str) -> float:
                 stem3_rc = _reverse_complement(seq[j : j + stem_len])
                 if all(
                     _compatible_after_reverse_complement(a, b)
-                    for a, b in zip(stem5, stem3_rc)
+                    for a, b in zip(stem5, stem3_rc, strict=True)
                 ):
                     best = min(best, _duplex_dg(stem5))
 
@@ -290,10 +290,18 @@ def parse_args():
     parser.add_argument("--in-tsv", required=True)
     parser.add_argument("--out-tsv", required=True)
     parser.add_argument("--config", help="Optional AmPrime config.yaml for thresholds")
-    parser.add_argument("--max-hairpin-dg", type=_nullable_float, default=argparse.SUPPRESS)
-    parser.add_argument("--max-homodimer-dg", type=_nullable_float, default=argparse.SUPPRESS)
-    parser.add_argument("--max-heterodimer-dg", type=_nullable_float, default=argparse.SUPPRESS)
-    parser.add_argument("--max-3end-dg", type=_nullable_float, default=argparse.SUPPRESS)
+    parser.add_argument(
+        "--max-hairpin-dg", type=_nullable_float, default=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--max-homodimer-dg", type=_nullable_float, default=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--max-heterodimer-dg", type=_nullable_float, default=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--max-3end-dg", type=_nullable_float, default=argparse.SUPPRESS
+    )
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 

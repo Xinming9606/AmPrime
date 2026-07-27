@@ -168,11 +168,7 @@ def run_muscle(input_path, output_path):
         if output_tmp.exists():
             output_tmp.unlink()
         result = _run_and_log(cmd)
-        if (
-            result.returncode == 0
-            and output_tmp.exists()
-            and output_tmp.stat().st_size
-        ):
+        if result.returncode == 0 and output_tmp.exists() and output_tmp.stat().st_size:
             os.replace(output_tmp, output_path)
             return True
 
@@ -285,9 +281,7 @@ def main():
             elapsed,
         )
     else:
-        log.info(
-            "Aligned %d sequences with %s in %.2f s", n_out, backend_used, elapsed
-        )
+        log.info("Aligned %d sequences with %s in %.2f s", n_out, backend_used, elapsed)
     return 0
 
 

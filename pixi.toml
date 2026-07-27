@@ -18,11 +18,14 @@ matplotlib-base = "*"
 pyyaml = "*"
 ncbi-genome-download = "*"
 markdown = "*"
+ruff = "*"
 
 [tasks]
 compile = "python tools/compile_project.py"
+lint = "ruff check workflow/scripts tools"
+format-check = "ruff format --check workflow/scripts tools"
 smoke = "python tools/smoke_project.py"
 dry-run = "snakemake -n"
 pipeline = "snakemake --cores 4"
-ci = { depends-on = ["compile", "smoke", "dry-run"] }
+ci = { depends-on = ["compile", "lint", "format-check", "smoke", "dry-run"] }
 package = "python tools/package_release.py"
