@@ -14,6 +14,7 @@ REQUIRED_SETTINGS = [
 ]
 
 ALLOWED_ASSEMBLY_LEVELS = {"complete", "chromosome", "scaffold", "contig"}
+ALLOWED_ALIGNMENT_BACKENDS = {"python", "auto", "mafft", "muscle"}
 QC_THRESHOLD_SETTINGS = [
     "max_hairpin_dg",
     "max_homodimer_dg",
@@ -24,8 +25,10 @@ QC_THRESHOLD_SETTINGS = [
 DEFAULT_SETTINGS = {
     "gene_aliases": {},
     "div_cut_per_gene": {},
+    "alignment_backend": "python",
     "min_allele_freq": 0.05,
     "max_degeneracy": 16,
+    "pcr_top_n": 10,
     "max_hairpin_dg": 0.0,
     "max_homodimer_dg": -6.0,
     "max_heterodimer_dg": -6.0,
@@ -86,6 +89,10 @@ def validate_config(cfg):
             "assembly_level must be one of: complete, chromosome, scaffold, contig"
         )
 
+    alignment_backend = cfg.get("alignment_backend", "python")
+    if alignment_backend not in ALLOWED_ALIGNMENT_BACKENDS:
+        errors.append("alignment_backend must be one of: python, auto, mafft, muscle")
+
     for key in ["primer_len", "amplicon_min_len", "amplicon_max_len"]:
         if not _is_int(cfg.get(key)) or cfg.get(key) <= 0:
             errors.append(f"{key} must be a positive integer")
@@ -113,6 +120,10 @@ def validate_config(cfg):
 
     if not _is_int(cfg.get("pcr_mismatch")) or cfg.get("pcr_mismatch") < 0:
         errors.append("pcr_mismatch must be a non-negative integer")
+
+    pcr_top_n = cfg.get("pcr_top_n", 10)
+    if not _is_int(pcr_top_n) or pcr_top_n < 1:
+        errors.append("pcr_top_n must be a positive integer")
 
     aliases = cfg.get("gene_aliases", {})
     if not isinstance(aliases, dict):

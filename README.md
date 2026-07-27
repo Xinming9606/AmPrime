@@ -19,8 +19,8 @@ a bacterial genus, especially when you want primers that should work across
 many genomes within that genus.
 
 It is not a full specificity checker yet. The current pipeline checks whether
-the top primer pair amplifies genomes inside the target genus, but it does not
-test off-target amplification outside the genus.
+the best QC-passed primer candidates amplify genomes inside the target genus,
+but it does not test off-target amplification outside the genus.
 
 ## How It Works
 
@@ -102,20 +102,22 @@ div_cut: 2.0
 GC_tol: 0.1
 
 pcr_mismatch: 3
+pcr_top_n: 10
 ```
 
 Useful options:
 
-| Setting | Meaning |
-| --- | --- |
-| `genus` | Bacterial genus name recognized by NCBI. |
-| `genes` | One or more gene names. Each gene is processed independently. |
-| `assembly_level` | NCBI assembly level: `complete`, `chromosome`, `scaffold`, or `contig`. |
-| `primer_len` | Primer length in bp. |
-| `amplicon_min_len`, `amplicon_max_len` | Target amplicon size range. |
-| `div_cut` | Maximum Shannon entropy allowed for conserved primer windows. Raise it if no primers are found. |
-| `GC_tol` | Maximum GC fraction difference between forward and reverse primers. |
-| `pcr_mismatch` | Mismatches allowed per primer during in silico PCR. |
+| Setting                                | Meaning                                                                                         |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `genus`                                | Bacterial genus name recognized by NCBI.                                                        |
+| `genes`                                | One or more gene names. Each gene is processed independently.                                   |
+| `assembly_level`                       | NCBI assembly level: `complete`, `chromosome`, `scaffold`, or `contig`.                         |
+| `primer_len`                           | Primer length in bp.                                                                            |
+| `amplicon_min_len`, `amplicon_max_len` | Target amplicon size range.                                                                     |
+| `div_cut`                              | Maximum Shannon entropy allowed for conserved primer windows. Raise it if no primers are found. |
+| `GC_tol`                               | Maximum GC fraction difference between forward and reverse primers.                             |
+| `pcr_mismatch`                         | Mismatches allowed per primer during in silico PCR.                                             |
+| `pcr_top_n`                            | Number of QC-passed primer pairs to validate before choosing the report recommendation.         |
 
 If a gene is annotated under different names across genomes, add aliases:
 
@@ -139,14 +141,15 @@ div_cut_per_gene:
 
 For each gene, outputs are written under `results/<genus>/`.
 
-| File | Contents |
-| --- | --- |
-| `reports/<gene>_report.html` | Main deliverable: recommendation, PCR validation, plot, and candidate table. |
-| `primers/<gene>_primers.tsv` | Filtered candidate primer pairs ranked by score. |
-| `primers/<gene>_amplicons.tsv` | In silico PCR result for the top primer pair. |
-| `primers/<gene>_diversity.png` | Per-position Shannon entropy plot with top primer sites marked. |
-| `logs/...` | Per-step logs for debugging. |
-| `benchmarks/...` | Snakemake benchmark files. |
+| File                            | Contents                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------- |
+| `reports/<gene>_report.html`    | Main deliverable: recommendation, PCR validation, plot, and candidate table.      |
+| `genomes/download_manifest.tsv` | Download manifest with FASTA counts, sizes, genus, and assembly level.            |
+| `primers/<gene>_primers.tsv`    | Filtered candidate primer pairs ranked by score.                                  |
+| `primers/<gene>_amplicons.tsv`  | In silico PCR results for the top validated primer candidates, sorted best first. |
+| `primers/<gene>_diversity.png`  | Per-position Shannon entropy plot with top primer sites marked.                   |
+| `logs/...`                      | Per-step logs for debugging.                                                      |
+| `benchmarks/...`                | Snakemake benchmark files.                                                        |
 
 ## Project Layout
 
@@ -183,6 +186,7 @@ AmPrime/
 |   |   |-- check_primers.py
 |   |   |-- in_silico_pcr.py
 |   |   |-- gene_report.py
+|   |   |-- fasta_io.py
 |   |   `-- gene_report.html
 |   `-- envs/
 |       `-- environment.yaml
@@ -245,8 +249,11 @@ If no primers are found, try one or more of the following:
 If genome download fails, confirm that the genus name is recognized by NCBI and
 that your internet connection is available.
 
-If alignment is slow, start with a small genus or a stricter assembly level
-such as `complete`.
+If a batch run is slow, inspect the per-step logs and benchmarks under
+`results/<genus>/logs/` and `results/<genus>/benchmarks/`. The Python sequence
+steps log input sequence counts, centroid counts, scanned genome bases, and
+elapsed time. Start with a stricter assembly level such as `complete`, a smaller
+gene set, or a lower `pcr_top_n` when first testing a large genus.
 
 ## Requirements
 
@@ -285,7 +292,7 @@ The environment includes Snakemake, Python, Biopython, NumPy, Matplotlib,
 - Off-target specificity outside the target genus is not checked yet.
 - Primer windows are derived from the alignment consensus.
 - Degenerate-base handling is conservative.
-- Very large genera can take a long time to download and align.
+- Very large genera can take a long time to download, align, and scan in Python.
 
 ## License
 

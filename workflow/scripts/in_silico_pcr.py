@@ -2,7 +2,7 @@
 # =============================================================================
 # in_silico_pcr.py
 #
-# Validate the top-ranked primer pair against full genome assemblies with a
+# Validate top-ranked primer pairs against full genome assemblies with a
 # cross-platform Python primer scanner.
 # =============================================================================
 
@@ -13,12 +13,18 @@ import logging
 import os
 import sys
 from bisect import bisect_left, bisect_right
+from time import perf_counter
 
 from config_schema import load_config_file
+from fasta_io import parse_fasta
 
 log = logging.getLogger(__name__)
+WARN_GENOME_COUNT = 500
+WARN_TOTAL_GENOME_BP = 500_000_000
 
 OUT_COLS = [
+    "validation_rank",
+    "input_rank",
     "primer_id",
     "fwd",
     "rev",
@@ -26,6 +32,7 @@ OUT_COLS = [
     "total_genomes",
     "amplification_rate",
     "mean_amplicon_len",
+    "combined_score",
 ]
 
 IUPAC_BASES = {
@@ -64,27 +71,9 @@ def configure_logging(log_path):
 def write_summary(rows, out_tsv):
     os.makedirs(os.path.dirname(out_tsv), exist_ok=True)
     with open(out_tsv, "w", newline="", encoding="utf-8") as fh:
-        w = csv.writer(fh, delimiter="\t")
-        w.writerow(OUT_COLS)
-        for row in rows:
-            w.writerow(row)
-
-
-def parse_fasta(path):
-    header = None
-    seq_parts = []
-    with open(path, encoding="utf-8-sig") as fh:
-        for line in fh:
-            line = line.rstrip()
-            if line.startswith(">"):
-                if header is not None:
-                    yield header, "".join(seq_parts)
-                header = line
-                seq_parts = []
-            else:
-                seq_parts.append(line)
-    if header is not None:
-        yield header, "".join(seq_parts)
+        writer = csv.DictWriter(fh, fieldnames=OUT_COLS, delimiter="\t")
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def reverse_complement(seq):
@@ -122,11 +111,18 @@ def find_primer_sites(sequence, primer, max_mismatch):
 
 
 def amplicon_lengths_for_sequence(sequence, fwd, rev, mismatch, valid_lo, valid_hi):
+    sequence = sequence.upper()
+    return amplicon_lengths_for_strands(
+        (sequence, reverse_complement(sequence)), fwd, rev, mismatch, valid_lo, valid_hi
+    )
+
+
+def amplicon_lengths_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi):
     rev_binding = reverse_complement(rev)
     len_fwd = len(fwd)
     len_rev = len(rev)
     lengths = []
-    for strand in [sequence, reverse_complement(sequence)]:
+    for strand in strands:
         fwd_sites = list(find_primer_sites(strand, fwd, mismatch))
         rev_sites = list(find_primer_sites(strand, rev_binding, mismatch))
         for fwd_start in fwd_sites:
@@ -150,6 +146,7 @@ def parse_args():
     parser.add_argument("--mismatch", type=int)
     parser.add_argument("--amplicon-min-len", type=int)
     parser.add_argument("--amplicon-max-len", type=int)
+    parser.add_argument("--top-n", type=int)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -166,9 +163,64 @@ def _param(cli_value, cfg, key):
     return cli_value if cli_value is not None else cfg.get(key)
 
 
+def _float_or_default(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _make_candidate(row, input_rank):
+    return {
+        "input_rank": input_rank,
+        "primer_id": row["primer_id"],
+        "fwd": row["fwd"],
+        "rev": row["rev"],
+        "combined_score": _float_or_default(row.get("combined_score")),
+        "amplified_genomes": 0,
+        "amplicon_lengths": [],
+    }
+
+
+def _summarize_candidates(candidates, total_genomes):
+    rows = []
+    for candidate in candidates:
+        lengths = candidate["amplicon_lengths"]
+        rate = (
+            candidate["amplified_genomes"] / total_genomes if total_genomes else 0.0
+        )
+        mean_len = sum(lengths) / len(lengths) if lengths else 0.0
+        rows.append(
+            {
+                "validation_rank": 0,
+                "input_rank": candidate["input_rank"],
+                "primer_id": candidate["primer_id"],
+                "fwd": candidate["fwd"],
+                "rev": candidate["rev"],
+                "n_genomes_amplified": candidate["amplified_genomes"],
+                "total_genomes": total_genomes,
+                "amplification_rate": round(rate, 4),
+                "mean_amplicon_len": round(mean_len, 1),
+                "combined_score": candidate["combined_score"],
+            }
+        )
+
+    rows.sort(
+        key=lambda row: (
+            -_float_or_default(row["amplification_rate"]),
+            -_float_or_default(row["combined_score"]),
+            int(row["input_rank"]),
+        )
+    )
+    for rank, row in enumerate(rows, 1):
+        row["validation_rank"] = rank
+    return rows
+
+
 def main():
     args = parse_args()
     configure_logging(args.log)
+    started = perf_counter()
 
     cfg = load_config_file(args.config) if args.config else {}
     mismatch = _required_param(
@@ -180,6 +232,9 @@ def main():
     amplicon_max_len = _required_param(
         "amplicon_max_len", _param(args.amplicon_max_len, cfg, "amplicon_max_len")
     )
+    top_n = _required_param("pcr_top_n", _param(args.top_n, cfg, "pcr_top_n"))
+    if top_n < 1:
+        raise SystemExit("pcr_top_n must be a positive integer")
 
     len_margin = 100
     valid_lo = max(0, amplicon_min_len - len_margin)
@@ -189,6 +244,7 @@ def main():
     log.info("Primers TSV : %s", args.primers_tsv)
     log.info("Genome dir  : %s", args.genome_dir)
     log.info("Mismatch    : %d", mismatch)
+    log.info("Top N       : %d", top_n)
 
     with open(args.primers_tsv, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -201,67 +257,104 @@ def main():
         write_summary([], args.out_tsv)
         return 0
 
-    top = primer_rows[0]
-    primer_id = top["primer_id"]
-    fwd = top["fwd"]
-    rev = top["rev"]
-    log.info("Top primer pair: %s  fwd=%s  rev=%s", primer_id, fwd, rev)
+    candidates = [
+        _make_candidate(row, input_rank)
+        for input_rank, row in enumerate(primer_rows[:top_n], 1)
+    ]
+    log.info("Validating %d primer pair(s)", len(candidates))
 
     genomes = sorted(glob.glob(os.path.join(args.genome_dir, "*.fna")))
     total_genomes = len(genomes)
     log.info("Found %d genome files", total_genomes)
+    if total_genomes > WARN_GENOME_COUNT:
+        log.warning(
+            "Large PCR input (%d genomes). Python scanning may be CPU-bound.",
+            total_genomes,
+        )
 
     if total_genomes == 0:
         log.error("No genome files found in %s", args.genome_dir)
         write_summary([], args.out_tsv)
         return 1
 
-    amplified_genomes = 0
-    amplicon_lengths = []
-
+    total_bp_scanned = 0
+    total_contigs = 0
+    warned_total_bp = False
     for genome in genomes:
         genome_id = os.path.basename(genome)
-        valid_here = []
+        genome_bp = 0
+        genome_contigs = 0
+        per_candidate_hits = [[] for _ in candidates]
         for _, sequence in parse_fasta(genome):
-            valid_here.extend(
-                amplicon_lengths_for_sequence(
-                    sequence, fwd, rev, mismatch, valid_lo, valid_hi
+            sequence = sequence.upper()
+            genome_bp += len(sequence)
+            genome_contigs += 1
+            strands = (sequence, reverse_complement(sequence))
+            for idx, candidate in enumerate(candidates):
+                per_candidate_hits[idx].extend(
+                    amplicon_lengths_for_strands(
+                        strands,
+                        candidate["fwd"],
+                        candidate["rev"],
+                        mismatch,
+                        valid_lo,
+                        valid_hi,
+                    )
                 )
-            )
 
-        if valid_here:
-            amplified_genomes += 1
-            amplicon_lengths.extend(valid_here)
+        total_bp_scanned += genome_bp
+        total_contigs += genome_contigs
+        amplified_here = 0
+        for candidate, lengths in zip(candidates, per_candidate_hits, strict=False):
+            if not lengths:
+                continue
+            amplified_here += 1
+            candidate["amplified_genomes"] += 1
+            candidate["amplicon_lengths"].extend(lengths)
+
+        if amplified_here:
             log.info(
-                "  %s : amplified (%d valid product[s])", genome_id, len(valid_here)
+                "  %s : amplified by %d pair(s); scanned %d contig(s), %d bp",
+                genome_id,
+                amplified_here,
+                genome_contigs,
+                genome_bp,
             )
         else:
-            log.info("  %s : no amplification", genome_id)
+            log.info(
+                "  %s : no amplification; scanned %d contig(s), %d bp",
+                genome_id,
+                genome_contigs,
+                genome_bp,
+            )
 
-    rate = amplified_genomes / total_genomes if total_genomes else 0.0
-    mean_len = sum(amplicon_lengths) / len(amplicon_lengths) if amplicon_lengths else 0
+        if not warned_total_bp and total_bp_scanned > WARN_TOTAL_GENOME_BP:
+            log.warning(
+                "PCR scan has exceeded %d bp. Consider stricter assembly_level "
+                "or a smaller pcr_top_n for faster batch runs.",
+                WARN_TOTAL_GENOME_BP,
+            )
+            warned_total_bp = True
 
+    rows = _summarize_candidates(candidates, total_genomes)
+    best = rows[0]
     log.info(
-        "Amplified %d / %d genomes (rate %.3f), mean amplicon length %.1f bp",
-        amplified_genomes,
-        total_genomes,
-        rate,
-        mean_len,
+        "Best pair after PCR: %s amplified %s / %s genomes (rate %.3f)",
+        best["primer_id"],
+        best["n_genomes_amplified"],
+        best["total_genomes"],
+        _float_or_default(best["amplification_rate"]),
     )
 
-    write_summary(
-        [
-            [
-                primer_id,
-                fwd,
-                rev,
-                amplified_genomes,
-                total_genomes,
-                round(rate, 4),
-                round(mean_len, 1),
-            ]
-        ],
-        args.out_tsv,
+    write_summary(rows, args.out_tsv)
+    elapsed = perf_counter() - started
+    log.info(
+        "Scanned %d genome(s), %d contig(s), %d bp for %d candidate pair(s) in %.2f s",
+        total_genomes,
+        total_contigs,
+        total_bp_scanned,
+        len(candidates),
+        elapsed,
     )
     log.info("Written to %s", args.out_tsv)
     return 0

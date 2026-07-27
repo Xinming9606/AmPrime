@@ -7,13 +7,16 @@
 # =============================================================================
 
 import argparse
+import csv
 import gzip
 import logging
 import os
 import shutil
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 
 from config_schema import load_config_file
 
@@ -67,8 +70,43 @@ def decompress_gzip_files(*directories):
             gz_path.unlink()
 
 
-def count_fna(directory):
-    return sum(1 for _ in Path(directory).rglob("*.fna"))
+def summarize_fna_dir(directory):
+    paths = list(Path(directory).rglob("*.fna"))
+    return {
+        "n_fna": len(paths),
+        "total_bytes": sum(path.stat().st_size for path in paths),
+    }
+
+
+def write_manifest(path, genus, assembly_level, rows):
+    if not path:
+        return
+
+    manifest_path = Path(path)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    generated_at = datetime.now(UTC).isoformat(timespec="seconds")
+    fieldnames = [
+        "generated_at",
+        "genus",
+        "assembly_level",
+        "label",
+        "format",
+        "output_dir",
+        "n_fna",
+        "total_bytes",
+    ]
+    with manifest_path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "generated_at": generated_at,
+                    "genus": genus,
+                    "assembly_level": assembly_level,
+                    **row,
+                }
+            )
 
 
 def parse_args():
@@ -79,6 +117,7 @@ def parse_args():
     parser.add_argument("--genomic-dir", required=True)
     parser.add_argument("--cds-dir", required=True)
     parser.add_argument("--rna-dir", required=True)
+    parser.add_argument("--manifest")
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -86,6 +125,7 @@ def parse_args():
 def main():
     args = parse_args()
     configure_logging(args.log)
+    started = perf_counter()
 
     cfg = load_config_file(args.config) if args.config else {}
     genus = args.genus or cfg.get("genus")
@@ -96,27 +136,42 @@ def main():
         raise SystemExit("missing --assembly-level or config setting: assembly_level")
 
     downloads = [
-        ("fasta", args.genomic_dir),
-        ("cds-fasta", args.cds_dir),
-        ("rna-fasta", args.rna_dir),
+        ("genomic", "fasta", args.genomic_dir),
+        ("cds", "cds-fasta", args.cds_dir),
+        ("rna", "rna-fasta", args.rna_dir),
     ]
-    for fmt, out_dir in downloads:
+    for _, fmt, out_dir in downloads:
         code = run_download(genus, assembly_level, fmt, out_dir)
         if code != 0:
             return code
 
     decompress_gzip_files(args.genomic_dir, args.cds_dir, args.rna_dir)
 
-    n_gen = count_fna(args.genomic_dir)
-    n_cds = count_fna(args.cds_dir)
-    n_rna = count_fna(args.rna_dir)
+    manifest_rows = []
+    for label, fmt, out_dir in downloads:
+        summary = summarize_fna_dir(out_dir)
+        manifest_rows.append(
+            {"label": label, "format": fmt, "output_dir": out_dir, **summary}
+        )
+    write_manifest(args.manifest, genus, assembly_level, manifest_rows)
+
+    n_gen = manifest_rows[0]["n_fna"]
+    n_cds = manifest_rows[1]["n_fna"]
+    n_rna = manifest_rows[2]["n_fna"]
+    total_bytes = sum(row["total_bytes"] for row in manifest_rows)
+    elapsed = perf_counter() - started
     log.info(
-        "Downloaded: %d genomic, %d CDS, %d RNA files for genus %s",
+        "Downloaded: %d genomic, %d CDS, %d RNA files for genus %s "
+        "(%.1f MB total) in %.2f s",
         n_gen,
         n_cds,
         n_rna,
         genus,
+        total_bytes / 1_000_000,
+        elapsed,
     )
+    if args.manifest:
+        log.info("Wrote download manifest to %s", args.manifest)
 
     if n_gen == 0:
         log.error("No genomic FASTA downloaded. Check genus name and assembly level.")

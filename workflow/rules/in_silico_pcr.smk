@@ -1,9 +1,9 @@
 # =============================================================================
 # in_silico_pcr.smk
 #
-# Per-gene rule: validates the top-ranked primer pair against the full
-# genome assemblies using the Python primer scanner. Reports amplification rate
-# and mean amplicon length.
+# Per-gene rule: validates the top-ranked QC-passed primer candidates against
+# the full genome assemblies using the Python primer scanner. Reports are sorted
+# by in silico PCR performance so the HTML report can recommend the best hit.
 #
 # Inputs : results/{genus}/primers/{gene}_primers.tsv   (from design_primers)
 #          results/{genus}/genomes/genomic/             (from download_genomes)

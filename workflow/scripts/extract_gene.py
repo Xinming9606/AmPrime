@@ -11,10 +11,13 @@ import argparse
 import logging
 import os
 import re
+from time import perf_counter
 
 from config_schema import load_config_file
+from fasta_io import parse_fasta, write_fasta
 
 log = logging.getLogger(__name__)
+WARN_FASTA_FILE_COUNT = 1000
 
 
 def configure_logging(log_path):
@@ -25,24 +28,6 @@ def configure_logging(log_path):
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-
-def parse_fasta(filepath):
-    """Yield (header, sequence) tuples from a FASTA file."""
-    header = None
-    seq_parts = []
-    with open(filepath, encoding="utf-8-sig") as fh:
-        for line in fh:
-            line = line.rstrip()
-            if line.startswith(">"):
-                if header is not None:
-                    yield header, "".join(seq_parts)
-                header = line
-                seq_parts = []
-            else:
-                seq_parts.append(line)
-    if header is not None:
-        yield header, "".join(seq_parts)
 
 
 def header_matches(header, names):
@@ -64,6 +49,7 @@ def header_matches(header, names):
 
 def extract_from_dir(directory, names, label, gene):
     """Scan one FASTA directory and return matching (header, seq) records."""
+    started = perf_counter()
     fna_files = sorted(
         os.path.join(directory, f) for f in os.listdir(directory) if f.endswith(".fna")
     )
@@ -73,28 +59,40 @@ def extract_from_dir(directory, names, label, gene):
         return []
 
     log.info("Scanning %d %s files ...", len(fna_files), label)
+    if len(fna_files) > WARN_FASTA_FILE_COUNT:
+        log.warning(
+            "Large %s input (%d FASTA files). Gene extraction may be I/O-bound.",
+            label,
+            len(fna_files),
+        )
 
     extracted = []
+    n_records = 0
+    n_bp = 0
     for fna in fna_files:
         genome_id = os.path.basename(fna)
-        hits = [
-            (hdr, seq) for hdr, seq in parse_fasta(fna) if header_matches(hdr, names)
-        ]
+        hits = []
+        for hdr, seq in parse_fasta(fna):
+            n_records += 1
+            n_bp += len(seq)
+            if header_matches(hdr, names):
+                hits.append((hdr, seq))
         if hits:
             log.info("  %s : %d sequence(s) found", genome_id, len(hits))
             extracted.extend(hits)
         else:
             log.warning("  %s : gene '%s' not found - skipping", genome_id, gene)
 
+    elapsed = perf_counter() - started
+    log.info(
+        "Scanned %d %s FASTA record(s), %d bp total, %d hit(s) in %.2f s",
+        n_records,
+        label,
+        n_bp,
+        len(extracted),
+        elapsed,
+    )
     return extracted
-
-
-def write_fasta(records, out_fasta):
-    os.makedirs(os.path.dirname(out_fasta), exist_ok=True)
-    with open(out_fasta, "w", encoding="utf-8") as fh:
-        for header, seq in records:
-            fh.write(header + "\n")
-            fh.writelines(seq[i : i + 80] + "\n" for i in range(0, len(seq), 80))
 
 
 def parse_args():

@@ -13,10 +13,15 @@ import os
 import sys
 from collections import defaultdict
 from math import ceil, floor
+from time import perf_counter
+
+from fasta_io import count_fasta_records, parse_fasta, write_fasta
 
 log = logging.getLogger(__name__)
 
 _GLOBALXX_ALIGNER = None
+WARN_SEQUENCE_COUNT = 1000
+WARN_CENTROID_COUNT = 500
 
 
 def configure_logging(log_path):
@@ -27,34 +32,6 @@ def configure_logging(log_path):
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-
-def count_fasta_records(path):
-    return sum(1 for _ in parse_fasta(path))
-
-
-def parse_fasta(path):
-    header = None
-    seq_parts = []
-    with open(path, encoding="utf-8-sig") as fh:
-        for line in fh:
-            line = line.rstrip()
-            if line.startswith(">"):
-                if header is not None:
-                    yield header, "".join(seq_parts)
-                header = line
-                seq_parts = []
-            else:
-                seq_parts.append(line)
-    if header is not None:
-        yield header, "".join(seq_parts)
-
-
-def write_fasta(records, path):
-    with open(path, "w", encoding="utf-8") as fh:
-        for header, seq in records:
-            fh.write(header + "\n")
-            fh.writelines(seq[i : i + 80] + "\n" for i in range(0, len(seq), 80))
 
 
 def same_length_identity(seq_a, seq_b):
@@ -148,6 +125,7 @@ def main():
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
+    started = perf_counter()
     records = list(parse_fasta(args.input))
     n_in = len(records)
     if n_in == 0:
@@ -155,11 +133,28 @@ def main():
         log.info("No input sequences; wrote empty centroids FASTA")
         return 0
 
+    total_bp = sum(len(seq) for _, seq in records)
+    log.info("Input size: %d sequence(s), %d bp total", n_in, total_bp)
+    if n_in > WARN_SEQUENCE_COUNT:
+        log.warning(
+            "Large cluster input (%d sequences). Greedy Python clustering may be slow.",
+            n_in,
+        )
+
     centroids = cluster_records(records, args.identity)
+    if len(centroids) > WARN_CENTROID_COUNT:
+        log.warning(
+            "Many centroids retained (%d). Alignment and primer design may be slow.",
+            len(centroids),
+        )
+
     write_fasta(centroids, args.output)
 
     n_out = count_fasta_records(args.output)
-    log.info("Clustered %d sequences into %d centroids", n_in, n_out)
+    elapsed = perf_counter() - started
+    log.info(
+        "Clustered %d sequences into %d centroids in %.2f s", n_in, n_out, elapsed
+    )
     return 0
 
 

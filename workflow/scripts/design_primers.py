@@ -25,6 +25,7 @@ import csv
 import logging
 import os
 from bisect import bisect_left, bisect_right
+from time import perf_counter
 
 from config_schema import load_config_file
 
@@ -77,6 +78,8 @@ _TSV_FIELDNAMES = [
 ]
 
 _VALID_BASES = frozenset("ACGT")
+WARN_KMER_COUNT = 50_000
+WARN_PAIR_COUNT = 200_000
 
 
 # ---------------------------------------------------------------------------
@@ -354,6 +357,7 @@ def _param(cli_value, cfg, key):
 
 def main():
     args = parse_args()
+    started = perf_counter()
 
     global AlignIO, np, plt
     import matplotlib.pyplot as plt
@@ -454,6 +458,12 @@ def main():
         return
 
     kmers = _build_kmers(consensus, pos_code, pos_fold, divs, primer_len)
+    if len(kmers) > WARN_KMER_COUNT:
+        log.warning(
+            "Large primer search space (%d kmers). Consider stricter div_cut "
+            "or a narrower amplicon range for faster batch runs.",
+            len(kmers),
+        )
 
     # --- 6. Filter candidates --------------------------------------------
     candidates = [
@@ -476,6 +486,11 @@ def main():
 
     # --- 7. Evaluate pairs ------------------------------------------------
     results = _evaluate_pairs(candidates, amplicon_min_len, amplicon_max_len, GC_tol)
+    if len(results) > WARN_PAIR_COUNT:
+        log.warning(
+            "Large primer result set (%d pairs). Downstream QC/reporting may be slow.",
+            len(results),
+        )
 
     if not results:
         log.info("No valid primer pairs found. Empty TSV.")
@@ -501,6 +516,7 @@ def main():
         out_plot,
         log,
     )
+    log.info("Primer design completed in %.2f s", perf_counter() - started)
 
 
 if __name__ == "__main__":

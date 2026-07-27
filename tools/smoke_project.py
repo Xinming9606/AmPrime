@@ -108,26 +108,48 @@ def check_primer_qc_cli():
     print("primer QC cli ok")
 
 
-def parse_fasta(path):
-    header = None
-    seq_parts = []
-    with open(path, encoding="utf-8-sig") as fh:
-        for line in fh:
-            line = line.rstrip()
-            if line.startswith(">"):
-                if header is not None:
-                    yield header, "".join(seq_parts)
-                header = line
-                seq_parts = []
-            else:
-                seq_parts.append(line)
-    if header is not None:
-        yield header, "".join(seq_parts)
+def check_fasta_io():
+    fasta_io = load_script_module("fasta_io")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        fasta = tmp / "records.fasta"
+        fasta_io.write_fasta([(">a", "ACGT"), (">b", "TTTT")], fasta)
+        records = list(fasta_io.parse_fasta(fasta))
+        assert records == [(">a", "ACGT"), (">b", "TTTT")]
+        assert fasta_io.count_fasta_records(fasta) == 2
+    print("FASTA IO ok")
+
+
+def check_download_manifest():
+    download_genomes = load_script_module("download_genomes")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        manifest = Path(tmp_dir) / "download_manifest.tsv"
+        download_genomes.write_manifest(
+            manifest,
+            "Borrelia",
+            "complete",
+            [
+                {
+                    "label": "genomic",
+                    "format": "fasta",
+                    "output_dir": "genomic",
+                    "n_fna": 1,
+                    "total_bytes": 42,
+                }
+            ],
+        )
+        with manifest.open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh, delimiter="\t"))
+        assert rows[0]["genus"] == "Borrelia"
+        assert rows[0]["label"] == "genomic"
+        assert rows[0]["n_fna"] == "1"
+    print("download manifest ok")
 
 
 def check_sequence_cli_steps():
     cluster_fasta = load_script_module("cluster_fasta")
     align_fasta = load_script_module("align_fasta")
+    fasta_io = load_script_module("fasta_io")
 
     assert cluster_fasta.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
     exact_deduped = cluster_fasta.cluster_records(
@@ -183,7 +205,7 @@ def check_sequence_cli_steps():
             check=True,
             env=smoke_env(),
         )
-        assert sum(1 for _ in parse_fasta(centroids)) == 2
+        assert fasta_io.count_fasta_records(centroids) == 2
 
         subprocess.run(
             [
@@ -200,7 +222,7 @@ def check_sequence_cli_steps():
             check=True,
             env=smoke_env(),
         )
-        aligned_lengths = {len(seq) for _, seq in parse_fasta(aligned)}
+        aligned_lengths = {len(seq) for _, seq in fasta_io.parse_fasta(aligned)}
         assert len(aligned_lengths) == 1
     print("cluster and align cli ok")
 
@@ -215,7 +237,9 @@ def check_in_silico_pcr_cli():
         log = tmp / "pcr.log"
 
         primers.write_text(
-            "primer_id\tfwd\trev\np1\tATGC\tGCGT\n",
+            "primer_id\tfwd\trev\tcombined_score\n"
+            "p1\tCCCC\tCCCC\t9.0\n"
+            "p2\tATGC\tGCGT\t1.0\n",
             encoding="utf-8",
         )
         (genome_dir / "genome.fna").write_text(
@@ -240,6 +264,8 @@ def check_in_silico_pcr_cli():
                 "10",
                 "--amplicon-max-len",
                 "30",
+                "--top-n",
+                "2",
                 "--log",
                 str(log),
             ],
@@ -249,7 +275,22 @@ def check_in_silico_pcr_cli():
         )
         with out_tsv.open(encoding="utf-8") as fh:
             rows = list(csv.DictReader(fh, delimiter="\t"))
+        assert [row["primer_id"] for row in rows] == ["p2", "p1"]
+        assert rows[0]["validation_rank"] == "1"
+        assert rows[0]["input_rank"] == "2"
         assert rows[0]["n_genomes_amplified"] == "1"
+
+        gene_report = load_script_module("gene_report")
+        assert (
+            gene_report._recommended_primer(
+                [
+                    {"primer_id": "p1", "fwd": "CCCC", "rev": "CCCC"},
+                    {"primer_id": "p2", "fwd": "ATGC", "rev": "GCGT"},
+                ],
+                rows,
+            )["primer_id"]
+            == "p2"
+        )
     print("in silico PCR cli ok")
 
 
@@ -267,6 +308,8 @@ def main():
         run_script_help(script_name)
 
     check_config_validation()
+    check_fasta_io()
+    check_download_manifest()
     check_kmer_boundary()
     check_primer_qc_cli()
     check_sequence_cli_steps()
