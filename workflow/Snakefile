@@ -24,9 +24,16 @@ def _resolve_scripts_dir():
     if "__file__" in globals():
         candidates.append(Path(__file__).resolve().parent / "scripts")
 
+    try:
+        config_schema_path = Path(
+            workflow.source_path("scripts/config_schema.py")
+        ).resolve()
+        candidates.append(config_schema_path.parent)
+    except (OSError, ValueError):
+        pass
+
     candidates.extend(
         [
-            Path(workflow.source_path("scripts")).resolve(),
             Path.cwd().resolve() / "workflow" / "scripts",
             Path.cwd().resolve() / "scripts",
         ]
