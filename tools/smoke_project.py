@@ -174,11 +174,7 @@ def check_sequence_cli_steps():
     assert cluster_fasta.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
     assert align_fasta.choose_backend("python") == "python"
     exact_deduped = cluster_fasta.cluster_records(
-        [
-            (">a", "ACGT"),
-            (">b", "acgt"),
-        ],
-        0.97,
+        [(">a", "ACGT"), (">b", "acgt")], 0.97
     )
     assert len(exact_deduped) == 1
     assert align_fasta.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
@@ -186,11 +182,7 @@ def check_sequence_cli_steps():
         (">b", "TGCA"),
     ]
     unequal_aligned = align_fasta.center_star_align(
-        [
-            (">a", "ACGTACGT"),
-            (">b", "ACGTTACGT"),
-            (">c", "ACGTACG"),
-        ]
+        [(">a", "ACGTACGT"), (">b", "ACGTTACGT"), (">c", "ACGTACG")]
     )
     assert len({len(seq) for _, seq in unequal_aligned}) == 1
     assert any("-" in seq for _, seq in unequal_aligned)
@@ -205,8 +197,7 @@ def check_sequence_cli_steps():
         align_log = tmp / "align.log"
 
         raw_fasta.write_text(
-            ">a\nACGTACGTACGT\n>b\nACGTACGTACGT\n>c\nACGTACGTTTGT\n",
-            encoding="utf-8",
+            ">a\nACGTACGTACGT\n>b\nACGTACGTACGT\n>c\nACGTACGTTTGT\n", encoding="utf-8"
         )
         subprocess.run(
             [
@@ -256,6 +247,10 @@ def check_sequence_cli_steps():
 
 
 def check_in_silico_pcr_cli():
+    in_silico_pcr = load_script_module("in_silico_pcr")
+    assert list(in_silico_pcr.find_primer_sites("AAGCTT", "AAGCAT", 1)) == [0]
+    assert list(in_silico_pcr.find_primer_sites("AAGYTT", "AAGCTT", 0)) == [0]
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         genome_dir = tmp / "genomes"
@@ -271,8 +266,7 @@ def check_in_silico_pcr_cli():
             encoding="utf-8",
         )
         (genome_dir / "genome.fna").write_text(
-            ">contig1\nATGCGGGGGGGGGGACGC\n",
-            encoding="utf-8",
+            ">contig1\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
         )
         subprocess.run(
             [
@@ -322,6 +316,68 @@ def check_in_silico_pcr_cli():
     print("in silico PCR cli ok")
 
 
+def check_gene_report_cli():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        primers = tmp / "primers.tsv"
+        amplicons = tmp / "amplicons.tsv"
+        alignment_meta = tmp / "alignment.tsv"
+        report = tmp / "report.html"
+        log = tmp / "report.log"
+
+        primers.write_text(
+            "primer_id\tfwd\trev\tfwd_pos\trev_pos\tfwd_GC\trev_GC\t"
+            "amplicon_len\tpair_diversity\tdelta_GC\tcombined_score\n"
+            "p1\tATGC\tGCGT\t1\t20\t0.5\t0.5\t20\t0.1\t0.0\t1.0\n",
+            encoding="utf-8",
+        )
+        amplicons.write_text(
+            "validation_rank\tinput_rank\tprimer_id\tfwd\trev\t"
+            "n_genomes_amplified\ttotal_genomes\tamplification_rate\t"
+            "mean_amplicon_len\tcombined_score\n"
+            "1\t1\tp1\tATGC\tGCGT\t1\t1\t1.0\t20\t1.0\n",
+            encoding="utf-8",
+        )
+        alignment_meta.write_text(
+            "generated_at\trequested_backend\tbackend_used\tfallback_used\t"
+            "backend_executable\tbackend_version\tn_input_sequences\t"
+            "n_output_sequences\tinput_total_bp\telapsed_seconds\n"
+            "2026-01-01T00:00:00\tmafft\tmafft\tFalse\tmafft\tv7\t2\t2\t40\t0.1\n",
+            encoding="utf-8",
+        )
+
+        subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPTS / "gene_report.py"),
+                "--gene",
+                "recG",
+                "--genus",
+                "Borrelia",
+                "--primers-tsv",
+                str(primers),
+                "--amplicons-tsv",
+                str(amplicons),
+                "--diversity-png",
+                str(tmp / "missing.png"),
+                "--alignment-meta",
+                str(alignment_meta),
+                "--out-html",
+                str(report),
+                "--log",
+                str(log),
+            ],
+            cwd=ROOT,
+            check=True,
+            env=smoke_env(),
+        )
+        html = report.read_text(encoding="utf-8")
+        assert "Alignment" in html
+        assert "Requested backend" in html
+        assert "mafft" in html
+    print("gene report cli ok")
+
+
 def main():
     for script_name in [
         "download_genomes.py",
@@ -342,6 +398,7 @@ def main():
     check_primer_qc_cli()
     check_sequence_cli_steps()
     check_in_silico_pcr_cli()
+    check_gene_report_cli()
 
 
 if __name__ == "__main__":

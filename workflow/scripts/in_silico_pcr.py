@@ -21,6 +21,8 @@ from fasta_io import parse_fasta
 log = logging.getLogger(__name__)
 WARN_GENOME_COUNT = 500
 WARN_TOTAL_GENOME_BP = 500_000_000
+MIN_SEED_LEN = 4
+UNAMBIGUOUS_BASES = frozenset("ACGT")
 
 OUT_COLS = [
     "validation_rank",
@@ -98,11 +100,68 @@ def primer_window_mismatches(primer, sequence, start, max_mismatch):
     return mismatches
 
 
+def _only_unambiguous_dna(seq):
+    return all(base in UNAMBIGUOUS_BASES for base in seq)
+
+
+def _seed_segments(primer, max_mismatch):
+    """Split primer into max_mismatch + 1 exact-match seeds.
+
+    Pigeonhole filtering is only safe when every segment can be searched
+    exactly. If any segment is too short or contains an ambiguous base, callers
+    should fall back to the full sliding-window scan.
+    """
+
+    if max_mismatch < 0 or max_mismatch >= len(primer):
+        return None
+
+    n_segments = max_mismatch + 1
+    base_len, remainder = divmod(len(primer), n_segments)
+    segments = []
+    offset = 0
+    for idx in range(n_segments):
+        seg_len = base_len + (1 if idx < remainder else 0)
+        seed = primer[offset : offset + seg_len]
+        if len(seed) < MIN_SEED_LEN or not _only_unambiguous_dna(seed):
+            return None
+        segments.append((offset, seed))
+        offset += seg_len
+    return segments
+
+
+def _seed_candidate_starts(sequence, primer, max_mismatch):
+    if len(sequence) < len(primer):
+        return []
+    if not _only_unambiguous_dna(sequence):
+        return None
+
+    segments = _seed_segments(primer, max_mismatch)
+    if segments is None:
+        return None
+
+    max_start = len(sequence) - len(primer)
+    starts = set()
+    for offset, seed in segments:
+        found_at = sequence.find(seed)
+        while found_at != -1:
+            window_start = found_at - offset
+            if 0 <= window_start <= max_start:
+                starts.add(window_start)
+            found_at = sequence.find(seed, found_at + 1)
+    return sorted(starts)
+
+
 def find_primer_sites(sequence, primer, max_mismatch):
     primer = primer.upper()
     sequence = sequence.upper()
     k = len(primer)
-    for start in range(len(sequence) - k + 1):
+    candidate_starts = _seed_candidate_starts(sequence, primer, max_mismatch)
+    starts = (
+        candidate_starts
+        if candidate_starts is not None
+        else range(len(sequence) - k + 1)
+    )
+    for start in starts:
         if (
             primer_window_mismatches(primer, sequence, start, max_mismatch)
             <= max_mismatch
