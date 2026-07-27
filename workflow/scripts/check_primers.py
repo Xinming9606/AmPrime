@@ -6,9 +6,8 @@
 # 3'-end stability for every primer pair, then drops pairs that fail any
 # configurable threshold.  Writes a filtered TSV with extra quality columns.
 #
-# Hairpin / dimer ΔG via primer3-py (Santalucia 1998 NN parameters).
-# 3'-end ΔG computed directly from the same NN parameters on the terminal
-# 5 bases.
+# All ΔG calculations use SantaLucia 1998 nearest-neighbour parameters in
+# pure Python — no primer3 C library required.  Works on any OS.
 #
 # Snakemake interface:
 #   snakemake.input[0]             : {gene}_primers_raw.tsv  (from design_primers)
@@ -24,7 +23,6 @@ import csv
 import logging
 import os
 
-import primer3
 import snakemake
 
 # ---------------------------------------------------------------------------
@@ -52,12 +50,105 @@ NN_DG = {
 SYMMETRY_DG = 0.43  # self-complementary duplex penalty
 INIT_AT = 2.30  # initiation — terminal A·T
 INIT_GC = 2.55  # initiation — terminal G·C
+MIN_STEM = 2  # minimum stem length for hairpin
+MIN_LOOP = 3  # minimum loop size for hairpin
 
 
+# ---------------------------------------------------------------------------
+# Building blocks
+# ---------------------------------------------------------------------------
 def _complement(base: str) -> str:
     return {"A": "T", "T": "A", "C": "G", "G": "C"}.get(base, base)
 
 
+def _reverse_complement(seq: str) -> str:
+    return "".join(_complement(b) for b in reversed(seq))
+
+
+def _duplex_dg(seq_5p: str) -> float:
+    """ΔG of a duplex scored from one strand (5'→3'), SantaLucia 1998.
+
+    seq_5p is the sequence of one strand in 5'→3' orientation.  The
+    complementary strand is assumed to pair perfectly.
+    """
+    n = len(seq_5p)
+    if n < 2:
+        return 0.0
+    dg = INIT_GC if seq_5p[0] in "GC" else INIT_AT
+    for i in range(n - 1):
+        dg += NN_DG.get(seq_5p[i : i + 2], 0)
+    if seq_5p == _reverse_complement(seq_5p):
+        dg += SYMMETRY_DG
+    return dg
+
+
+# ---------------------------------------------------------------------------
+# Dimer ΔG (homo- and hetero-)
+# ---------------------------------------------------------------------------
+def _align_dg(seq_a: str, seq_b_rc: str) -> float:
+    """Best (most negative) ΔG of antiparallel alignment of seq_a vs seq_b_rc.
+
+    seq_b_rc is the reverse complement of some other sequence in 5'→3'.
+    We slide the two 5'→3' strands across each other and score every
+    overlapping region.
+    """
+    best = 0.0
+    la, lb = len(seq_a), len(seq_b_rc)
+
+    for offset in range(-(lb - 1), la):
+        if offset >= 0:
+            a0, b0, n = offset, 0, min(la - offset, lb)
+        else:
+            a0, _, n = 0, -offset, min(la, lb + offset)
+
+        if n < MIN_STEM:
+            continue
+
+        dg = _duplex_dg(seq_a[a0 : a0 + n])
+        best = min(best, dg)
+
+    return round(best, 2)
+
+
+def calc_homodimer_dg(seq: str) -> float:
+    """Minimum homodimer ΔG (self-dimer)."""
+    return _align_dg(seq, _reverse_complement(seq))
+
+
+def calc_heterodimer_dg(seq_a: str, seq_b: str) -> float:
+    """Minimum heterodimer ΔG (cross-dimer)."""
+    return _align_dg(seq_a, _reverse_complement(seq_b))
+
+
+# ---------------------------------------------------------------------------
+# Hairpin ΔG
+# ---------------------------------------------------------------------------
+def calc_hairpin_dg(seq: str) -> float:
+    """Minimum hairpin ΔG — find the most stable stem within the sequence.
+
+    Enumerates all possible stem-start (i), stem-end-start (j) and stem
+    length (k) combinations with a minimum loop of MIN_LOOP bases between the
+    two stem halves.  Because primer oligos are short (15–35 nt) the
+    triple-loop is harmless.
+    """
+    n = len(seq)
+    best = 0.0
+
+    for stem_len in range(MIN_STEM, n // 2 + 1):
+        max_i = n - 2 * stem_len - MIN_LOOP
+        for i in range(max_i + 1):
+            j_min = i + stem_len + MIN_LOOP
+            for _ in range(j_min, n - stem_len + 1):
+                stem5 = seq[i : i + stem_len]
+                dg = _duplex_dg(stem5)
+                best = min(best, dg)
+
+    return round(best, 2)
+
+
+# ---------------------------------------------------------------------------
+# 3'-end stability
+# ---------------------------------------------------------------------------
 def calc_3end_dg(seq: str, n_bases: int = 5) -> float:
     """ΔG of the 3'-most *n_bases* of *seq* (kcal/mol, SantaLucia 1998)."""
     end = seq[-n_bases:].upper()
@@ -68,7 +159,6 @@ def calc_3end_dg(seq: str, n_bases: int = 5) -> float:
     for i in range(len(end) - 1):
         dg += NN_DG.get(end[i : i + 2], 0)
 
-    # symmetry correction
     rc = "".join(_complement(b) for b in reversed(end))
     if end == rc:
         dg += SYMMETRY_DG
@@ -83,22 +173,14 @@ def check_pair(row: dict, thresholds: dict) -> dict:
     fwd = row["fwd"]
     rev = row["rev"]
 
-    hp_f = primer3.calc_hairpin(fwd)
-    hp_r = primer3.calc_hairpin(rev)
-    hd_f = primer3.calc_homodimer(fwd)
-    hd_r = primer3.calc_homodimer(rev)
-    het = primer3.calc_heterodimer(fwd, rev)
-    dg3_f = calc_3end_dg(fwd)
-    dg3_r = calc_3end_dg(rev)
-
     metrics = {
-        "hairpin_fwd_dg": round(hp_f.dg, 2),
-        "hairpin_rev_dg": round(hp_r.dg, 2),
-        "homodimer_fwd_dg": round(hd_f.dg, 2),
-        "homodimer_rev_dg": round(hd_r.dg, 2),
-        "heterodimer_dg": round(het.dg, 2),
-        "end3_fwd_dg": dg3_f,
-        "end3_rev_dg": dg3_r,
+        "hairpin_fwd_dg": calc_hairpin_dg(fwd),
+        "hairpin_rev_dg": calc_hairpin_dg(rev),
+        "homodimer_fwd_dg": calc_homodimer_dg(fwd),
+        "homodimer_rev_dg": calc_homodimer_dg(rev),
+        "heterodimer_dg": calc_heterodimer_dg(fwd, rev),
+        "end3_fwd_dg": calc_3end_dg(fwd),
+        "end3_rev_dg": calc_3end_dg(rev),
     }
 
     # thresholds: more negative ΔG = stronger secondary structure = worse

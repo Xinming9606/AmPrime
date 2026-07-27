@@ -9,7 +9,6 @@ dependencies:
   # taxid resolution + gene extraction
   - python=3.11
   - biopython
-  - primer3-py
 
   # genome download
   - ncbi-genome-download
