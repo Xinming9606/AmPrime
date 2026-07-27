@@ -6,6 +6,7 @@
 # Builds the body in Markdown, converts to HTML, and wraps in a styled page.
 # =============================================================================
 
+import argparse
 import base64
 import csv
 import logging
@@ -175,8 +176,21 @@ def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img)
 # =============================================================================
 # Main
 # =============================================================================
+def parse_args():
+    parser = argparse.ArgumentParser(description="Build a per-gene HTML report.")
+    parser.add_argument("--gene", required=True)
+    parser.add_argument("--genus", required=True)
+    parser.add_argument("--primers-tsv", required=True)
+    parser.add_argument("--amplicons-tsv", required=True)
+    parser.add_argument("--diversity-png", required=True)
+    parser.add_argument("--out-html", required=True)
+    parser.add_argument("--log", required=True)
+    return parser.parse_args()
+
+
 def main():
-    log_path = snakemake.log[0]
+    args = parse_args()
+    log_path = args.log
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     logging.basicConfig(
         filename=log_path,
@@ -186,23 +200,17 @@ def main():
     )
     log = logging.getLogger()
 
-    gene = snakemake.params["gene"]
-    genus = snakemake.params["genus"]
+    gene = args.gene
+    genus = args.genus
 
     # -- read inputs -------------------------------------------------------
-    primers = (
-        _read_tsv(snakemake.input["primers"])
-        if os.path.isfile(snakemake.input["primers"])
-        else []
-    )
+    primers = _read_tsv(args.primers_tsv) if os.path.isfile(args.primers_tsv) else []
     amplicons = (
-        _read_tsv(snakemake.input["amplicons"])
-        if os.path.isfile(snakemake.input["amplicons"])
-        else []
+        _read_tsv(args.amplicons_tsv) if os.path.isfile(args.amplicons_tsv) else []
     )
     log.info("primers: %d rows, amplicons: %d rows", len(primers), len(amplicons))
 
-    has_diversity = os.path.isfile(snakemake.input["diversity"])
+    has_diversity = os.path.isfile(args.diversity_png)
 
     # -- build markdown body ------------------------------------------------
     body_md = _build_body(
@@ -212,7 +220,7 @@ def main():
         primers=primers,
         top_primer=primers[0] if primers else None,
         pcr=amplicons[0] if amplicons else None,
-        diversity_img=_b64_png(snakemake.input["diversity"]) if has_diversity else None,
+        diversity_img=_b64_png(args.diversity_png) if has_diversity else None,
     )
 
     # -- markdown to HTML, then wrap in page shell --------------------------
@@ -221,7 +229,7 @@ def main():
     html = _PAGE.replace("{TITLE}", escape(title)).replace("{CONTENT}", body_html)
 
     # -- write --------------------------------------------------------------
-    out_html = snakemake.output[0]
+    out_html = args.out_html
     os.makedirs(os.path.dirname(out_html), exist_ok=True)
     with open(out_html, "w", encoding="utf-8") as fh:
         fh.write(html)

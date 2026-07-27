@@ -24,5 +24,14 @@ rule check_primers:
         str(RESULTS / "logs" / "check_primers" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "check_primers" / "{gene}.txt")
-    script:
-        "../scripts/check_primers.py"
+    shell:
+        """
+        python workflow/scripts/check_primers.py \
+            --in-tsv {input:q} \
+            --out-tsv {output:q} \
+            --max-hairpin-dg {params.max_hairpin_dg} \
+            --max-homodimer-dg {params.max_homodimer_dg} \
+            --max-heterodimer-dg {params.max_heterodimer_dg} \
+            --max-3end-dg {params.max_3end_dg} \
+            --log {log:q}
+        """

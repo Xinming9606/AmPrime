@@ -28,5 +28,18 @@ rule design_primers:
         str(RESULTS / "logs" / "design_primers" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "design_primers" / "{gene}.txt")
-    script:
-        "../scripts/design_primers.py"
+    shell:
+        """
+        python workflow/scripts/design_primers.py \
+            --aln {input.aln:q} \
+            --out-tsv {output.tsv:q} \
+            --out-plot {output.plot:q} \
+            --primer-len {params.primer_len} \
+            --amplicon-min-len {params.amplicon_min_len} \
+            --amplicon-max-len {params.amplicon_max_len} \
+            --div-cut {params.div_cut} \
+            --gc-tol {params.GC_tol} \
+            --min-allele-freq {params.min_allele_freq} \
+            --max-degeneracy {params.max_degeneracy} \
+            --log {log:q}
+        """

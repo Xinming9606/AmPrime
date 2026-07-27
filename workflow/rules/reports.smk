@@ -19,5 +19,14 @@ rule gene_report:
         str(RESULTS / "logs" / "gene_report" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "gene_report" / "{gene}.txt")
-    script:
-        "../scripts/gene_report.py"
+    shell:
+        """
+        python workflow/scripts/gene_report.py \
+            --gene {params.gene:q} \
+            --genus {params.genus:q} \
+            --primers-tsv {input.primers:q} \
+            --amplicons-tsv {input.amplicons:q} \
+            --diversity-png {input.diversity:q} \
+            --out-html {output:q} \
+            --log {log:q}
+        """

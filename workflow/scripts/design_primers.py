@@ -8,18 +8,9 @@
 #
 # Dependencies: numpy, matplotlib, Bio (Biopython).  No R required.
 #
-# Snakemake interface:
-#   snakemake.input[0]                  : aligned FASTA (.aln)
-#   snakemake.output["tsv"]             : primer pairs TSV
-#   snakemake.output["plot"]            : diversity PNG
-#   snakemake.params.primer_len         : int
-#   snakemake.params.amplicon_min_len   : int
-#   snakemake.params.amplicon_max_len   : int
-#   snakemake.params.div_cut            : float
-#   snakemake.params.GC_tol             : float
-#   snakemake.params.min_allele_freq    : float (optional, default 0.05)
-#   snakemake.params.max_degeneracy     : int   (optional, default 16)
-#   snakemake.log[0]                    : log file
+# CLI:
+#   python design_primers.py --aln input.aln --out-tsv primers.tsv \
+#       --out-plot diversity.png --primer-len 20 ...
 #
 # TSV columns (same as R version):
 #   primer_id, fwd, rev, fwd_pos, rev_pos, amplicon_len,
@@ -27,6 +18,7 @@
 #   pair_diversity, delta_GC, combined_score
 # =============================================================================
 
+import argparse
 import csv
 import logging
 import os
@@ -322,13 +314,29 @@ def _plot_diversity(
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
-def main():
-    # --- Snakemake interface -----------------------------------------------
-    aln_file = snakemake.input[0]
-    out_tsv = snakemake.output["tsv"]
-    out_plot = snakemake.output["plot"]
+def parse_args():
+    parser = argparse.ArgumentParser(description="Design conserved primer pairs.")
+    parser.add_argument("--aln", required=True, help="Input aligned FASTA")
+    parser.add_argument("--out-tsv", required=True, help="Output primer TSV")
+    parser.add_argument("--out-plot", required=True, help="Output diversity PNG")
+    parser.add_argument("--primer-len", required=True, type=int)
+    parser.add_argument("--amplicon-min-len", required=True, type=int)
+    parser.add_argument("--amplicon-max-len", required=True, type=int)
+    parser.add_argument("--div-cut", required=True, type=float)
+    parser.add_argument("--gc-tol", required=True, type=float)
+    parser.add_argument("--min-allele-freq", default=0.05, type=float)
+    parser.add_argument("--max-degeneracy", default=16, type=int)
+    parser.add_argument("--log", required=True)
+    return parser.parse_args()
 
-    log_path = snakemake.log[0]
+
+def main():
+    args = parse_args()
+    aln_file = args.aln
+    out_tsv = args.out_tsv
+    out_plot = args.out_plot
+
+    log_path = args.log
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     logging.basicConfig(
         filename=log_path,
@@ -338,14 +346,13 @@ def main():
     )
     log = logging.getLogger()
 
-    p = snakemake.params
-    primer_len = int(p["primer_len"])
-    amplicon_min_len = int(p["amplicon_min_len"])
-    amplicon_max_len = int(p["amplicon_max_len"])
-    div_cut = float(p["div_cut"])
-    GC_tol = float(p["GC_tol"])
-    min_allele_freq = float(p.get("min_allele_freq", 0.05))
-    max_degeneracy = int(p.get("max_degeneracy", 16))
+    primer_len = args.primer_len
+    amplicon_min_len = args.amplicon_min_len
+    amplicon_max_len = args.amplicon_max_len
+    div_cut = args.div_cut
+    GC_tol = args.gc_tol
+    min_allele_freq = args.min_allele_freq
+    max_degeneracy = args.max_degeneracy
 
     log.info("Parameters:")
     for k, v in [

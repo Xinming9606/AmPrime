@@ -9,16 +9,12 @@
 # All ΔG calculations use SantaLucia 1998 nearest-neighbour parameters in
 # pure Python — no primer3 C library required.  Works on any OS.
 #
-# Snakemake interface:
-#   snakemake.input[0]             : {gene}_primers_raw.tsv  (from design_primers)
-#   snakemake.output[0]            : {gene}_primers.tsv       (filtered + columns)
-#   snakemake.params.max_hairpin_dg       : float or None
-#   snakemake.params.max_homodimer_dg     : float or None
-#   snakemake.params.max_heterodimer_dg   : float or None
-#   snakemake.params.max_3end_dg          : float or None
-#   snakemake.log[0]               : log file
+# CLI:
+#   python check_primers.py --in-tsv primers_raw.tsv --out-tsv primers.tsv \
+#       --max-hairpin-dg 0 --max-homodimer-dg -6 ...
 # =============================================================================
 
+import argparse
 import csv
 import logging
 import os
@@ -206,8 +202,21 @@ def check_pair(row: dict, thresholds: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def parse_args():
+    parser = argparse.ArgumentParser(description="Filter primer pairs by QC metrics.")
+    parser.add_argument("--in-tsv", required=True)
+    parser.add_argument("--out-tsv", required=True)
+    parser.add_argument("--max-hairpin-dg", type=float)
+    parser.add_argument("--max-homodimer-dg", type=float)
+    parser.add_argument("--max-heterodimer-dg", type=float)
+    parser.add_argument("--max-3end-dg", type=float)
+    parser.add_argument("--log", required=True)
+    return parser.parse_args()
+
+
 def main():
-    log_path = snakemake.log[0]
+    args = parse_args()
+    log_path = args.log
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     logging.basicConfig(
         filename=log_path,
@@ -217,22 +226,14 @@ def main():
     )
     log = logging.getLogger()
 
-    in_tsv = snakemake.input[0]
-    out_tsv = snakemake.output[0]
-
-    # helper: cast params to float or None
-    def p(name):
-        v = snakemake.params.get(name)
-        try:
-            return float(v) if v is not None else None
-        except (TypeError, ValueError):
-            return None
+    in_tsv = args.in_tsv
+    out_tsv = args.out_tsv
 
     thresholds = {
-        "max_hairpin_dg": p("max_hairpin_dg"),
-        "max_homodimer_dg": p("max_homodimer_dg"),
-        "max_heterodimer_dg": p("max_heterodimer_dg"),
-        "max_3end_dg": p("max_3end_dg"),
+        "max_hairpin_dg": args.max_hairpin_dg,
+        "max_homodimer_dg": args.max_homodimer_dg,
+        "max_heterodimer_dg": args.max_heterodimer_dg,
+        "max_3end_dg": args.max_3end_dg,
     }
 
     log.info("Input  : %s", in_tsv)
