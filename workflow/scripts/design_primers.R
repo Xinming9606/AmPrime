@@ -138,31 +138,10 @@ for (i in seq_len(aln_len)) {
 message("Degenerate columns (fold > 1): ", sum(pos_fold > 1L), " / ", aln_len)
 
 # ---------------------------------------------------------------------------
-# 3. Diversity plot (points + rolling mean, primer sites added later)
+# 3. Rolling mean for later diversity plot
 # ---------------------------------------------------------------------------
 roll_k       <- min(10, aln_len)
 roll_means   <- rollmean(divs, k = roll_k, fill = NA)
-
-png(out_plot, width = 1800, height = 900, res = 150)
-par(mar = c(4, 4, 2, 1), family = "sans")
-plot(
-  divs, pch = 16, cex = 0.3,
-  ylim = c(0, max(divs) * 1.1),
-  type = "p",
-  main = paste0("Sequence diversity — ", basename(aln_file)),
-  xlab = "Alignment position (bp)",
-  ylab = "Shannon entropy"
-)
-lines(roll_means, col = "#2ca25f", lwd = 1.5)
-legend("topright",
-  legend = c("Per-position entropy", paste0("Rolling mean (k=", roll_k, ")")),
-  col    = c("black", "#2ca25f"),
-  pch    = c(16, NA), lty = c(NA, 1), pt.cex = 0.6, lwd = c(NA, 1.5),
-  bty    = "n"
-)
-# primer rectangles are added below, after we know the positions
-plot_env <- environment()   # capture so we can add rects after dev is open
-dev.off()
 
 # ---------------------------------------------------------------------------
 # 4. Helper: reverse complement of a sequence string (IUPAC-aware)
@@ -296,7 +275,7 @@ write.table(out_df, out_tsv, sep = "\t", quote = FALSE, row.names = FALSE)
 message("Wrote ", nrow(out_df), " primer pairs to ", out_tsv)
 
 # ---------------------------------------------------------------------------
-# 9. Re-draw diversity plot with primer site rectangles overlaid
+# 9. Diversity plot with primer site rectangles overlaid
 # ---------------------------------------------------------------------------
 top_n   <- min(5, nrow(out_df))
 top_df  <- out_df[seq_len(top_n), ]

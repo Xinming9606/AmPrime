@@ -20,12 +20,13 @@ genes:
   - recG
 
 # Optional: alternative names for a gene, searched in addition to the gene name.
-# Useful when annotation varies across genomes.
+# Useful when annotation varies across genomes. Example:
 #   gene_aliases:
 #     tuf:
 #       - tsf
 #     16S:
 #       - "16S ribosomal RNA"
+gene_aliases: {}
 
 # -----------------------------------------------------------------------------
 # Genome download
