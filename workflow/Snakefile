@@ -18,8 +18,30 @@
 import sys
 from pathlib import Path
 
-WORKFLOW_DIR = Path(workflow.source_path("."))
-SCRIPTS_DIR = WORKFLOW_DIR / "scripts"
+def _resolve_scripts_dir():
+    candidates = []
+
+    if "__file__" in globals():
+        candidates.append(Path(__file__).resolve().parent / "scripts")
+
+    candidates.extend(
+        [
+            Path(workflow.source_path("scripts")).resolve(),
+            Path.cwd().resolve() / "workflow" / "scripts",
+            Path.cwd().resolve() / "scripts",
+        ]
+    )
+
+    for candidate in candidates:
+        if (candidate / "config_schema.py").is_file():
+            return candidate
+
+    searched = "\n".join(str(candidate) for candidate in candidates)
+    raise ModuleNotFoundError(f"Cannot find config_schema.py. Searched:\n{searched}")
+
+
+SCRIPTS_DIR = _resolve_scripts_dir()
+WORKFLOW_DIR = SCRIPTS_DIR.parent
 sys.path.insert(0, str(SCRIPTS_DIR))
 
 from config_schema import apply_config_defaults, validate_config

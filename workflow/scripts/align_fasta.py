@@ -12,9 +12,10 @@ import logging
 import os
 import shutil
 import sys
-import warnings
 
 log = logging.getLogger(__name__)
+
+_PAIRWISE_ALIGNER = None
 
 
 def configure_logging(log_path):
@@ -55,17 +56,27 @@ def write_fasta(records, path):
             fh.writelines(seq[i : i + 80] + "\n" for i in range(0, len(seq), 80))
 
 
-def pairwise_align(reference, sequence):
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        from Bio import pairwise2
+def pairwise_aligner():
+    global _PAIRWISE_ALIGNER
+    if _PAIRWISE_ALIGNER is None:
+        from Bio.Align import PairwiseAligner
 
-    alignments = pairwise2.align.globalms(
-        reference.upper(), sequence.upper(), 2, -1, -5, -0.5, one_alignment_only=True
-    )
+        aligner = PairwiseAligner()
+        aligner.mode = "global"
+        aligner.match_score = 2
+        aligner.mismatch_score = -1
+        aligner.open_gap_score = -5
+        aligner.extend_gap_score = -0.5
+        _PAIRWISE_ALIGNER = aligner
+    return _PAIRWISE_ALIGNER
+
+
+def pairwise_align(reference, sequence):
+    alignments = pairwise_aligner().align(reference.upper(), sequence.upper())
     if not alignments:
-        return reference, sequence
-    return alignments[0].seqA, alignments[0].seqB
+        return reference.upper(), sequence.upper()
+    alignment = alignments[0]
+    return str(alignment[0]), str(alignment[1])
 
 
 def merge_alignment_rows(ref_row, rows, new_ref_row, new_seq_row):
@@ -107,6 +118,9 @@ def center_star_align(records):
     if len(records) < 2:
         return records
 
+    if len({len(seq) for _, seq in records}) == 1:
+        return [(header, seq.upper()) for header, seq in records]
+
     ref_index = max(range(len(records)), key=lambda idx: len(records[idx][1]))
     ref_header, ref_seq = records[ref_index]
     ordered = [records[ref_index]] + [
@@ -142,18 +156,23 @@ def main():
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
-    n_in = count_fasta_records(args.input)
+    records = list(parse_fasta(args.input))
+    n_in = len(records)
     if n_in < 2:
         shutil.copyfile(args.input, args.output)
         log.info("Only %d sequence(s); skipped alignment", n_in)
         return 0
 
-    records = list(parse_fasta(args.input))
     aligned = center_star_align(records)
     write_fasta(aligned, args.output)
 
     n_out = count_fasta_records(args.output)
-    log.info("Aligned %d sequences", n_out)
+    if len({len(seq) for _, seq in records}) == 1:
+        log.info(
+            "All %d sequences have equal length; skipped pairwise alignment", n_out
+        )
+    else:
+        log.info("Aligned %d sequences", n_out)
     return 0
 
 

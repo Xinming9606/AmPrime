@@ -126,6 +126,32 @@ def parse_fasta(path):
 
 
 def check_sequence_cli_steps():
+    cluster_fasta = load_script_module("cluster_fasta")
+    align_fasta = load_script_module("align_fasta")
+
+    assert cluster_fasta.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
+    exact_deduped = cluster_fasta.cluster_records(
+        [
+            (">a", "ACGT"),
+            (">b", "acgt"),
+        ],
+        0.97,
+    )
+    assert len(exact_deduped) == 1
+    assert align_fasta.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
+        (">a", "ACGT"),
+        (">b", "TGCA"),
+    ]
+    unequal_aligned = align_fasta.center_star_align(
+        [
+            (">a", "ACGTACGT"),
+            (">b", "ACGTTACGT"),
+            (">c", "ACGTACG"),
+        ]
+    )
+    assert len({len(seq) for _, seq in unequal_aligned}) == 1
+    assert any("-" in seq for _, seq in unequal_aligned)
+
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         raw_fasta = tmp / "raw.fasta"

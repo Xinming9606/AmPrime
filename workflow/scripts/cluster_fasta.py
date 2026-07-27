@@ -11,9 +11,12 @@ import argparse
 import logging
 import os
 import sys
-import warnings
+from collections import defaultdict
+from math import ceil, floor
 
 log = logging.getLogger(__name__)
+
+_GLOBALXX_ALIGNER = None
 
 
 def configure_logging(log_path):
@@ -54,40 +57,80 @@ def write_fasta(records, path):
             fh.writelines(seq[i : i + 80] + "\n" for i in range(0, len(seq), 80))
 
 
+def same_length_identity(seq_a, seq_b):
+    matches = sum(a == b for a, b in zip(seq_a, seq_b, strict=False))
+    return matches / len(seq_a)
+
+
+def length_identity_upper_bound(len_a, len_b):
+    if not len_a or not len_b:
+        return 0.0
+    return min(len_a, len_b) / max(len_a, len_b)
+
+
+def globalxx_aligner():
+    global _GLOBALXX_ALIGNER
+    if _GLOBALXX_ALIGNER is None:
+        from Bio.Align import PairwiseAligner
+
+        aligner = PairwiseAligner()
+        aligner.mode = "global"
+        aligner.match_score = 1
+        aligner.mismatch_score = 0
+        aligner.open_gap_score = 0
+        aligner.extend_gap_score = 0
+        _GLOBALXX_ALIGNER = aligner
+    return _GLOBALXX_ALIGNER
+
+
 def sequence_identity(seq_a, seq_b):
     """Return an approximate global identity for clustering."""
     if not seq_a or not seq_b:
         return 0.0
-
     if len(seq_a) == len(seq_b):
-        matches = sum(
-            a == b for a, b in zip(seq_a.upper(), seq_b.upper(), strict=False)
-        )
-        return matches / len(seq_a)
+        return same_length_identity(seq_a, seq_b)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        from Bio import pairwise2
-
-    aln = pairwise2.align.globalxx(
-        seq_a.upper(), seq_b.upper(), one_alignment_only=True
-    )
-    if not aln:
-        return 0.0
-    matches = aln[0].score
+    matches = globalxx_aligner().align(seq_a, seq_b).score
     return matches / max(len(seq_a), len(seq_b))
 
 
 def cluster_records(records, identity):
     """Greedy centroid clustering in input order."""
+    if not 0 < identity <= 1:
+        raise ValueError("--identity must be greater than 0 and at most 1")
+
     centroids = []
+    centroids_by_length = defaultdict(list)
+    seen_sequences = set()
+
     for header, seq in records:
-        if any(
-            sequence_identity(seq, centroid_seq) >= identity
-            for _, centroid_seq in centroids
-        ):
+        seq_norm = seq.upper()
+        if seq_norm in seen_sequences:
             continue
+
+        seq_len = len(seq_norm)
+        min_len = ceil(identity * seq_len)
+        max_len = floor(seq_len / identity)
+        redundant = False
+
+        for length in range(min_len, max_len + 1):
+            for centroid_seq in centroids_by_length.get(length, []):
+                if (
+                    length_identity_upper_bound(seq_len, len(centroid_seq)) >= identity
+                    and sequence_identity(seq_norm, centroid_seq) >= identity
+                ):
+                    redundant = True
+                    break
+            if redundant:
+                break
+
+        if redundant:
+            seen_sequences.add(seq_norm)
+            continue
+
         centroids.append((header, seq))
+        centroids_by_length[seq_len].append(seq_norm)
+        seen_sequences.add(seq_norm)
     return centroids
 
 
@@ -105,13 +148,13 @@ def main():
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
-    n_in = count_fasta_records(args.input)
+    records = list(parse_fasta(args.input))
+    n_in = len(records)
     if n_in == 0:
         open(args.output, "w", encoding="utf-8").close()
         log.info("No input sequences; wrote empty centroids FASTA")
         return 0
 
-    records = list(parse_fasta(args.input))
     centroids = cluster_records(records, args.identity)
     write_fasta(centroids, args.output)
 
