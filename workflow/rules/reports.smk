@@ -7,9 +7,10 @@
 
 rule gene_report:
     input:
-        primers   = str(PRIMERS / "{gene}_primers.tsv"),
-        amplicons = str(PRIMERS / "{gene}_amplicons.tsv"),
-        diversity = str(PRIMERS / "{gene}_diversity.png")
+        primers        = str(PRIMERS / "{gene}_primers.tsv"),
+        amplicons      = str(PRIMERS / "{gene}_amplicons.tsv"),
+        diversity      = str(PRIMERS / "{gene}_diversity.png"),
+        alignment_meta = str(ALIGNED / "{gene}.alignment.tsv")
     output:
         str(REPORTS / "{gene}_report.html")
     params:
@@ -27,6 +28,7 @@ rule gene_report:
             --primers-tsv {input.primers:q} \
             --amplicons-tsv {input.amplicons:q} \
             --diversity-png {input.diversity:q} \
+            --alignment-meta {input.alignment_meta:q} \
             --out-html {output:q} \
             --log {log:q}
         """

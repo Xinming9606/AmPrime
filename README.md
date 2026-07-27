@@ -1,5 +1,12 @@
 # AmPrime
 
+[![CI](https://github.com/Xinming9606/AmPrime/actions/workflows/ci.yml/badge.svg)](https://github.com/Xinming9606/AmPrime/actions/workflows/ci.yml)
+[![Release](https://github.com/Xinming9606/AmPrime/actions/workflows/release.yml/badge.svg)](https://github.com/Xinming9606/AmPrime/actions/workflows/release.yml)
+[![Managed with Pixi](https://img.shields.io/badge/managed%20with-pixi-ffcb47)](https://pixi.sh)
+![Python](https://img.shields.io/badge/python-3.12-blue)
+![Platforms](https://img.shields.io/badge/platforms-linux--64%20%7C%20osx--arm64%20%7C%20win--64-2ea44f)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 AmPrime designs and validates amplicon-sequencing primer pairs for bacterial
 housekeeping genes using public NCBI genomes.
 
@@ -28,13 +35,32 @@ For each gene independently, AmPrime runs this pipeline:
 
 ```mermaid
 flowchart TD
-    A[Download genomes<br/>NCBI] --> B[Extract gene<br/>CDS + rRNA]
-    B --> C[Dereplicate]
-    C --> D[Align]
-    D --> E[Design primers<br/>entropy scan]
-    E --> F[Quality filter<br/>hairpin + dimer]
-    F --> G[In silico PCR]
-    G --> H[HTML report]
+    CFG[config.yaml<br/>genus + genes + backend]
+
+    subgraph S1[Genome Inputs]
+        direction LR
+        A[Download<br/>NCBI genomes] --> B[Extract gene<br/>CDS + rRNA]
+    end
+
+    subgraph S2[Representative Sequences]
+        direction LR
+        C[Dereplicate] --> D[Align]
+    end
+
+    subgraph S3[Primer Selection]
+        direction LR
+        E[Design<br/>entropy scan] --> F[QC<br/>hairpin + dimer]
+    end
+
+    subgraph S4[Validation And Output]
+        direction LR
+        G[In silico<br/>PCR] --> H[HTML<br/>report]
+    end
+
+    CFG --> A
+    B --> C
+    D --> E
+    F --> G
 ```
 
 The main idea is simple:
@@ -206,7 +232,9 @@ by standalone Python command-line tools in `workflow/scripts/`.
 Download outputs are refreshed as a unit when the download rule runs, so stale
 FASTA files from a previous genus or assembly level do not mix into a new run.
 Alignment runs write a small metadata TSV next to the alignment, recording the
-requested backend and the backend actually used.
+requested backend and the backend actually used. The same alignment summary is
+included in each HTML report so `alignment_backend: auto` runs remain easy to
+audit.
 
 This keeps each step easy to test and debug. For example:
 
@@ -270,8 +298,8 @@ elapsed time. Start with a stricter assembly level such as `complete`, a smaller
 gene set, or a lower `pcr_top_n` when first testing a large genus.
 
 If you use `alignment_backend: auto`, check
-`results/<genus>/aligned/<gene>.alignment.tsv` to see whether the run used
-Python, MAFFT, or MUSCLE. For final reproducible runs, set the backend
+the report or `results/<genus>/aligned/<gene>.alignment.tsv` to see whether the
+run used Python, MAFFT, or MUSCLE. For final reproducible runs, set the backend
 explicitly.
 
 ## Requirements

@@ -76,7 +76,9 @@ def _recommended_primer(primers, amplicons):
     return primer or primers[0]
 
 
-def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img):
+def _build_body(
+    gene, genus, timestamp, primers, top_primer, pcr, diversity_img, alignment_meta=None
+):
     """Build the report body as a Markdown string, using inline HTML only
     for styled elements (alerts, badges).  All control flow is plain Python."""
 
@@ -89,6 +91,33 @@ def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img)
     out.append("")
     out.append(f"*Generated {timestamp}*")
     out.append("")
+
+    # ---- alignment metadata ---------------------------------------------
+    if alignment_meta:
+        meta = alignment_meta
+        out.append("## Alignment")
+        out.append("")
+        out.append("|  |  |")
+        out.append("|---|---|")
+        out.append(
+            f"| **Requested backend** | {_md_code(meta.get('requested_backend', ''))} |"
+        )
+        out.append(f"| **Backend used** | {_md_code(meta.get('backend_used', ''))} |")
+        if meta.get("fallback_used"):
+            out.append(f"| **Fallback used** | {_md_cell(meta.get('fallback_used'))} |")
+        if meta.get("n_input_sequences"):
+            out.append(
+                f"| **Input sequences** | {_md_cell(meta.get('n_input_sequences'))} |"
+            )
+        if meta.get("n_output_sequences"):
+            out.append(
+                f"| **Output sequences** | {_md_cell(meta.get('n_output_sequences'))} |"
+            )
+        if meta.get("elapsed_seconds"):
+            out.append(
+                f"| **Elapsed seconds** | {_md_cell(meta.get('elapsed_seconds'))} |"
+            )
+        out.append("")
 
     # ---- in silico PCR ---------------------------------------------------
     out.append("## In silico PCR validation")
@@ -210,6 +239,7 @@ def parse_args():
     parser.add_argument("--primers-tsv", required=True)
     parser.add_argument("--amplicons-tsv", required=True)
     parser.add_argument("--diversity-png", required=True)
+    parser.add_argument("--alignment-meta")
     parser.add_argument("--out-html", required=True)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
@@ -241,7 +271,17 @@ def main():
     amplicons = (
         _read_tsv(args.amplicons_tsv) if os.path.isfile(args.amplicons_tsv) else []
     )
-    log.info("primers: %d rows, amplicons: %d rows", len(primers), len(amplicons))
+    alignment_meta = (
+        _read_tsv(args.alignment_meta)
+        if args.alignment_meta and os.path.isfile(args.alignment_meta)
+        else []
+    )
+    log.info(
+        "primers: %d rows, amplicons: %d rows, alignment metadata: %d rows",
+        len(primers),
+        len(amplicons),
+        len(alignment_meta),
+    )
 
     has_diversity = os.path.isfile(args.diversity_png)
 
@@ -254,6 +294,7 @@ def main():
         top_primer=_recommended_primer(primers, amplicons),
         pcr=amplicons[0] if amplicons else None,
         diversity_img=_b64_png(args.diversity_png) if has_diversity else None,
+        alignment_meta=alignment_meta[0] if alignment_meta else None,
     )
 
     # -- markdown to HTML, then wrap in page shell --------------------------
