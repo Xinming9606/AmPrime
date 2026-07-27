@@ -12,6 +12,7 @@ import glob
 import logging
 import os
 import sys
+from bisect import bisect_left, bisect_right
 
 from config_schema import load_config_file
 
@@ -96,11 +97,16 @@ def base_matches(primer_base, target_base):
     return bool(primer_set & target_set)
 
 
-def primer_mismatches(primer, target):
-    return sum(
-        0 if base_matches(primer_base, target_base) else 1
-        for primer_base, target_base in zip(primer, target, strict=False)
-    )
+def primer_window_mismatches(primer, sequence, start, max_mismatch):
+    mismatches = 0
+    for offset, primer_base in enumerate(primer):
+        target_base = sequence[start + offset]
+        if base_matches(primer_base, target_base):
+            continue
+        mismatches += 1
+        if mismatches > max_mismatch:
+            return mismatches
+    return mismatches
 
 
 def find_primer_sites(sequence, primer, max_mismatch):
@@ -108,25 +114,29 @@ def find_primer_sites(sequence, primer, max_mismatch):
     sequence = sequence.upper()
     k = len(primer)
     for start in range(len(sequence) - k + 1):
-        window = sequence[start : start + k]
-        if primer_mismatches(primer, window) <= max_mismatch:
+        if (
+            primer_window_mismatches(primer, sequence, start, max_mismatch)
+            <= max_mismatch
+        ):
             yield start
 
 
 def amplicon_lengths_for_sequence(sequence, fwd, rev, mismatch, valid_lo, valid_hi):
     rev_binding = reverse_complement(rev)
+    len_fwd = len(fwd)
+    len_rev = len(rev)
     lengths = []
     for strand in [sequence, reverse_complement(sequence)]:
         fwd_sites = list(find_primer_sites(strand, fwd, mismatch))
         rev_sites = list(find_primer_sites(strand, rev_binding, mismatch))
         for fwd_start in fwd_sites:
-            min_rev_start = fwd_start + len(fwd)
-            for rev_start in rev_sites:
-                if rev_start < min_rev_start:
-                    continue
-                amplicon_len = rev_start + len(rev) - fwd_start
-                if valid_lo <= amplicon_len <= valid_hi:
-                    lengths.append(amplicon_len)
+            lo = max(fwd_start + len_fwd, fwd_start + valid_lo - len_rev)
+            hi = fwd_start + valid_hi - len_rev
+            start = bisect_left(rev_sites, lo)
+            end = bisect_right(rev_sites, hi)
+            lengths.extend(
+                rev_start + len_rev - fwd_start for rev_start in rev_sites[start:end]
+            )
     return lengths
 
 

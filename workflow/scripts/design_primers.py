@@ -24,6 +24,7 @@ import argparse
 import csv
 import logging
 import os
+from bisect import bisect_left, bisect_right
 
 from config_schema import load_config_file
 
@@ -181,14 +182,17 @@ def _build_kmers(consensus, pos_code, pos_fold, divs, primer_len):
 def _evaluate_pairs(candidates, amplicon_min_len, amplicon_max_len, GC_tol):
     """Return a sorted list of primer-pair dicts (best first)."""
     results = []
-    nc = len(candidates)
-    for i in range(nc - 1):
-        ci = candidates[i]
-        for j in range(i + 1, nc):
-            cj = candidates[j]
+    candidates = sorted(candidates, key=lambda item: item["pos"])
+    positions = [candidate["pos"] for candidate in candidates]
+
+    for i, ci in enumerate(candidates[:-1]):
+        lo = ci["pos"] + amplicon_min_len
+        hi = ci["pos"] + amplicon_max_len
+        start = bisect_left(positions, lo, i + 1)
+        end = bisect_right(positions, hi, i + 1)
+
+        for cj in candidates[start:end]:
             amp_len = cj["pos"] - ci["pos"]
-            if not (amplicon_min_len <= amp_len <= amplicon_max_len):
-                continue
             delta_gc = abs(ci["GC"] - cj["GC"])
             if delta_gc >= GC_tol:
                 continue
@@ -338,7 +342,9 @@ def parse_args():
 
 def _required_param(name, value):
     if value is None:
-        raise SystemExit(f"missing --{name.replace('_', '-')} or config setting: {name}")
+        raise SystemExit(
+            f"missing --{name.replace('_', '-')} or config setting: {name}"
+        )
     return value
 
 
@@ -369,7 +375,9 @@ def main():
     )
     log = logging.getLogger()
 
-    primer_len = _required_param("primer_len", _param(args.primer_len, cfg, "primer_len"))
+    primer_len = _required_param(
+        "primer_len", _param(args.primer_len, cfg, "primer_len")
+    )
     amplicon_min_len = _required_param(
         "amplicon_min_len", _param(args.amplicon_min_len, cfg, "amplicon_min_len")
     )
