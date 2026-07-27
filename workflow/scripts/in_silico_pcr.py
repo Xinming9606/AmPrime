@@ -26,13 +26,15 @@
 #   snakemake.log[0]          : log file
 # =============================================================================
 
-import os
-import sys
 import csv
 import glob
-import subprocess
 import logging
+import os
+import subprocess
+import sys
 import tempfile
+
+import snakemake
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -40,9 +42,10 @@ import tempfile
 log_path = snakemake.log[0]
 os.makedirs(os.path.dirname(log_path), exist_ok=True)
 logging.basicConfig(
-    filename=log_path, level=logging.INFO,
+    filename=log_path,
+    level=logging.INFO,
     format="%(asctime)s %(levelname)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 log = logging.getLogger()
 
@@ -50,19 +53,19 @@ log = logging.getLogger()
 # Parameters
 # ---------------------------------------------------------------------------
 primers_tsv = snakemake.input.primers
-genome_dir  = snakemake.input.genome_dir
-out_tsv     = snakemake.output[0]
-gene        = snakemake.params.gene
-mismatch    = int(snakemake.params.mismatch)
+genome_dir = snakemake.input.genome_dir
+out_tsv = snakemake.output[0]
+gene = snakemake.params.gene
+mismatch = int(snakemake.params.mismatch)
 
 # Valid-product length window: discard spurious long-range "amplicons" that
 # arise from mismatched off-target priming. We allow a margin around the
 # configured amplicon size range.
-min_len     = int(snakemake.params.amplicon_min_len)
+min_len = int(snakemake.params.amplicon_min_len)
 max_len_cfg = int(snakemake.params.amplicon_max_len)
-len_margin  = 100  # bp of slack on each side
-valid_lo    = max(0, min_len - len_margin)
-valid_hi    = max_len_cfg + len_margin
+len_margin = 100  # bp of slack on each side
+valid_lo = max(0, min_len - len_margin)
+valid_hi = max_len_cfg + len_margin
 
 log.info("Gene        : %s", gene)
 log.info("Primers TSV : %s", primers_tsv)
@@ -73,10 +76,15 @@ log.info("Mismatch    : %d", mismatch)
 # Output header
 # ---------------------------------------------------------------------------
 OUT_COLS = [
-    "primer_id", "fwd", "rev",
-    "n_genomes_amplified", "total_genomes",
-    "amplification_rate", "mean_amplicon_len"
+    "primer_id",
+    "fwd",
+    "rev",
+    "n_genomes_amplified",
+    "total_genomes",
+    "amplification_rate",
+    "mean_amplicon_len",
 ]
+
 
 def write_summary(rows):
     os.makedirs(os.path.dirname(out_tsv), exist_ok=True)
@@ -85,6 +93,7 @@ def write_summary(rows):
         w.writerow(OUT_COLS)
         for r in rows:
             w.writerow(r)
+
 
 # ---------------------------------------------------------------------------
 # 1. Read top primer pair
@@ -98,7 +107,7 @@ if len(primer_rows) == 0:
     write_summary([])
     sys.exit(0)
 
-top = primer_rows[0]   # already sorted by combined_score in design_primers.R
+top = primer_rows[0]  # already sorted by combined_score in design_primers.R
 primer_id = top["primer_id"]
 fwd = top["fwd"]
 rev = top["rev"]
@@ -120,7 +129,7 @@ if total_genomes == 0:
 # 3. Write seqkit primer file
 # ---------------------------------------------------------------------------
 with tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False) as pf:
-    pf.write("%s\t%s\t%s\n" % (primer_id, fwd, rev))
+    pf.write(f"{primer_id}\t{fwd}\t{rev}\n")
     primer_file = pf.name
 log.info("Wrote seqkit primer file: %s", primer_file)
 
@@ -128,21 +137,13 @@ log.info("Wrote seqkit primer file: %s", primer_file)
 # 4. Run seqkit amplicon per genome, collect amplicon lengths
 # ---------------------------------------------------------------------------
 amplified_genomes = 0
-amplicon_lengths  = []
+amplicon_lengths = []
 
 for g in genomes:
     genome_id = os.path.basename(g)
-    cmd = [
-        "seqkit", "amplicon",
-        "-p", primer_file,
-        "-m", str(mismatch),
-        "--bed",
-        g
-    ]
+    cmd = ["seqkit", "amplicon", "-p", primer_file, "-m", str(mismatch), "--bed", g]
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, check=True
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as e:
         log.warning("  %s : seqkit failed (%s) - skipping", genome_id, e.stderr.strip())
         continue
@@ -165,11 +166,20 @@ for g in genomes:
     if valid_here:
         amplified_genomes += 1
         amplicon_lengths.extend(valid_here)
-        log.info("  %s : amplified (%d valid product[s], %d raw)",
-                 genome_id, len(valid_here), len(lines))
+        log.info(
+            "  %s : amplified (%d valid product[s], %d raw)",
+            genome_id,
+            len(valid_here),
+            len(lines),
+        )
     elif lines:
-        log.info("  %s : only spurious products (%d raw, none in %d-%d bp) - not counted",
-                 genome_id, len(lines), valid_lo, valid_hi)
+        log.info(
+            "  %s : only spurious products (%d raw, none in %d-%d bp) - not counted",
+            genome_id,
+            len(lines),
+            valid_lo,
+            valid_hi,
+        )
     else:
         log.info("  %s : no amplification", genome_id)
 
@@ -181,13 +191,26 @@ os.unlink(primer_file)
 rate = amplified_genomes / total_genomes if total_genomes else 0.0
 mean_len = sum(amplicon_lengths) / len(amplicon_lengths) if amplicon_lengths else 0
 
-log.info("Amplified %d / %d genomes (rate %.3f), mean amplicon length %.1f bp",
-         amplified_genomes, total_genomes, rate, mean_len)
+log.info(
+    "Amplified %d / %d genomes (rate %.3f), mean amplicon length %.1f bp",
+    amplified_genomes,
+    total_genomes,
+    rate,
+    mean_len,
+)
 
-write_summary([[
-    primer_id, fwd, rev,
-    amplified_genomes, total_genomes,
-    round(rate, 4), round(mean_len, 1)
-]])
+write_summary(
+    [
+        [
+            primer_id,
+            fwd,
+            rev,
+            amplified_genomes,
+            total_genomes,
+            round(rate, 4),
+            round(mean_len, 1),
+        ]
+    ]
+)
 
 log.info("Written to %s", out_tsv)
