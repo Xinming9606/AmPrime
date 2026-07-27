@@ -37,6 +37,11 @@ gene_aliases: {}
 # "complete" is recommended for reliable gene extraction.
 assembly_level: complete
 
+# Alignment backend. "python" is the fully cross-platform fallback. Use "auto"
+# to prefer MAFFT/MUSCLE when they are installed, or set "mafft"/"muscle" to
+# require a specific external aligner for more reliable multiple alignment.
+alignment_backend: python
+
 # -----------------------------------------------------------------------------
 # Primer design parameters
 # -----------------------------------------------------------------------------
@@ -93,3 +98,7 @@ max_3end_dg: -8.0
 # primer, 3 mismatches is about 15% tolerance and is useful for cross-species
 # amplification.
 pcr_mismatch: 3
+
+# Number of QC-passed primer pairs to validate against full genomes. The report
+# recommends the best pair after this validation, not just the original top hit.
+pcr_top_n: 10

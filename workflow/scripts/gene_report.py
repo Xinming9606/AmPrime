@@ -58,6 +58,24 @@ def _md_code(value):
     return f"`{_md_cell(value)}`"
 
 
+def _find_primer_by_id(primers, primer_id):
+    for primer in primers:
+        if primer.get("primer_id") == primer_id:
+            return primer
+    return None
+
+
+def _recommended_primer(primers, amplicons):
+    if not primers:
+        return None
+    if not amplicons:
+        return primers[0]
+
+    best_pcr = amplicons[0]
+    primer = _find_primer_by_id(primers, best_pcr.get("primer_id"))
+    return primer or primers[0]
+
+
 def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img):
     """Build the report body as a Markdown string, using inline HTML only
     for styled elements (alerts, badges).  All control flow is plain Python."""
@@ -81,6 +99,10 @@ def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img)
         out.append("|  |  |")
         out.append("|---|---|")
         out.append(f"| **Primer pair** | {_md_code(a.get('primer_id', ''))} |")
+        if a.get("validation_rank"):
+            out.append(f"| **Validation rank** | {_md_cell(a.get('validation_rank'))} |")
+        if a.get("input_rank"):
+            out.append(f"| **Original candidate rank** | {_md_cell(a.get('input_rank'))} |")
         out.append(f"| **Forward primer** | {_md_code(a.get('fwd', ''))} |")
         out.append(f"| **Reverse primer** | {_md_code(a.get('rev', ''))} |")
         out.append(
@@ -95,8 +117,8 @@ def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img)
         out.append('<div class="alert alert-info">')
         out.append(
             "<strong>No primer pair was validated.</strong> "
-            "Either no primers passed the design filters, or the top pair "
-            "amplified no genomes. See the candidate table below."
+            "Either no primers passed the design filters, or in silico PCR "
+            "could not run. See the candidate table below."
         )
         out.append("</div>")
     out.append("")
@@ -225,7 +247,7 @@ def main():
         genus=genus,
         timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
         primers=primers,
-        top_primer=primers[0] if primers else None,
+        top_primer=_recommended_primer(primers, amplicons),
         pcr=amplicons[0] if amplicons else None,
         diversity_img=_b64_png(args.diversity_png) if has_diversity else None,
     )

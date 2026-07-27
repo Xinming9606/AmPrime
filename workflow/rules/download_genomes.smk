@@ -13,6 +13,7 @@
 #   results/{genus}/genomes/genomic/   - *_genomic.fna           [KEPT]
 #   results/{genus}/genomes/cds/       - *_cds_from_genomic.fna
 #   results/{genus}/genomes/rna/       - *_rna_from_genomic.fna
+#   results/{genus}/genomes/download_manifest.tsv
 # =============================================================================
 
 
@@ -20,7 +21,8 @@ rule download_genomes:
     output:
         genomic = directory(str(GENOMES_GENOMIC)),
         cds     = directory(str(GENOMES_CDS)),
-        rna     = directory(str(GENOMES_RNA))
+        rna     = directory(str(GENOMES_RNA)),
+        manifest = str(RESULTS / "genomes" / "download_manifest.tsv")
     params:
         config_file = "config/config.yaml"
     log:
@@ -34,5 +36,6 @@ rule download_genomes:
             --genomic-dir {output.genomic:q} \
             --cds-dir {output.cds:q} \
             --rna-dir {output.rna:q} \
+            --manifest {output.manifest:q} \
             --log {log:q}
         """

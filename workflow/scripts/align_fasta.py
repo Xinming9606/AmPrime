@@ -12,10 +12,15 @@ import logging
 import os
 import shutil
 import sys
+from time import perf_counter
+
+from fasta_io import count_fasta_records, parse_fasta, write_fasta
 
 log = logging.getLogger(__name__)
 
 _PAIRWISE_ALIGNER = None
+WARN_ALIGNMENT_SEQUENCE_COUNT = 500
+WARN_ALIGNMENT_BP = 2_000_000
 
 
 def configure_logging(log_path):
@@ -26,34 +31,6 @@ def configure_logging(log_path):
         format="%(asctime)s %(levelname)s %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-
-
-def count_fasta_records(path):
-    return sum(1 for _ in parse_fasta(path))
-
-
-def parse_fasta(path):
-    header = None
-    seq_parts = []
-    with open(path, encoding="utf-8-sig") as fh:
-        for line in fh:
-            line = line.rstrip()
-            if line.startswith(">"):
-                if header is not None:
-                    yield header, "".join(seq_parts)
-                header = line
-                seq_parts = []
-            else:
-                seq_parts.append(line)
-    if header is not None:
-        yield header, "".join(seq_parts)
-
-
-def write_fasta(records, path):
-    with open(path, "w", encoding="utf-8") as fh:
-        for header, seq in records:
-            fh.write(header + "\n")
-            fh.writelines(seq[i : i + 80] + "\n" for i in range(0, len(seq), 80))
 
 
 def pairwise_aligner():
@@ -156,6 +133,7 @@ def main():
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
+    started = perf_counter()
     records = list(parse_fasta(args.input))
     n_in = len(records)
     if n_in < 2:
@@ -163,16 +141,34 @@ def main():
         log.info("Only %d sequence(s); skipped alignment", n_in)
         return 0
 
+    lengths = [len(seq) for _, seq in records]
+    total_bp = sum(lengths)
+    log.info(
+        "Input size: %d sequence(s), %d bp total, length range %d-%d bp",
+        n_in,
+        total_bp,
+        min(lengths),
+        max(lengths),
+    )
+    if n_in > WARN_ALIGNMENT_SEQUENCE_COUNT or total_bp > WARN_ALIGNMENT_BP:
+        log.warning(
+            "Large alignment input. Python fallback alignment is intended for "
+            "first-pass screening and may be slow or less accurate than a full MSA."
+        )
+
     aligned = center_star_align(records)
     write_fasta(aligned, args.output)
 
     n_out = count_fasta_records(args.output)
+    elapsed = perf_counter() - started
     if len({len(seq) for _, seq in records}) == 1:
         log.info(
-            "All %d sequences have equal length; skipped pairwise alignment", n_out
+            "All %d sequences have equal length; skipped pairwise alignment in %.2f s",
+            n_out,
+            elapsed,
         )
     else:
-        log.info("Aligned %d sequences", n_out)
+        log.info("Aligned %d sequences in %.2f s", n_out, elapsed)
     return 0
 
 
