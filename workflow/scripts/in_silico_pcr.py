@@ -15,6 +15,8 @@ import subprocess
 import sys
 import tempfile
 
+from config_schema import load_config_file
+
 log = logging.getLogger(__name__)
 
 OUT_COLS = [
@@ -53,25 +55,45 @@ def parse_args():
     parser.add_argument("--genome-dir", required=True)
     parser.add_argument("--out-tsv", required=True)
     parser.add_argument("--gene", required=True)
-    parser.add_argument("--mismatch", required=True, type=int)
-    parser.add_argument("--amplicon-min-len", required=True, type=int)
-    parser.add_argument("--amplicon-max-len", required=True, type=int)
+    parser.add_argument("--config", help="Optional AmPrime config.yaml")
+    parser.add_argument("--mismatch", type=int)
+    parser.add_argument("--amplicon-min-len", type=int)
+    parser.add_argument("--amplicon-max-len", type=int)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
+
+
+def _required_param(name, value):
+    if value is None:
+        raise SystemExit(f"missing --{name.replace('_', '-')} or config setting: {name}")
+    return value
+
+
+def _param(cli_value, cfg, key):
+    return cli_value if cli_value is not None else cfg.get(key)
 
 
 def main():
     args = parse_args()
     configure_logging(args.log)
 
+    cfg = load_config_file(args.config) if args.config else {}
+    mismatch = _required_param("pcr_mismatch", _param(args.mismatch, cfg, "pcr_mismatch"))
+    amplicon_min_len = _required_param(
+        "amplicon_min_len", _param(args.amplicon_min_len, cfg, "amplicon_min_len")
+    )
+    amplicon_max_len = _required_param(
+        "amplicon_max_len", _param(args.amplicon_max_len, cfg, "amplicon_max_len")
+    )
+
     len_margin = 100
-    valid_lo = max(0, args.amplicon_min_len - len_margin)
-    valid_hi = args.amplicon_max_len + len_margin
+    valid_lo = max(0, amplicon_min_len - len_margin)
+    valid_hi = amplicon_max_len + len_margin
 
     log.info("Gene        : %s", args.gene)
     log.info("Primers TSV : %s", args.primers_tsv)
     log.info("Genome dir  : %s", args.genome_dir)
-    log.info("Mismatch    : %d", args.mismatch)
+    log.info("Mismatch    : %d", mismatch)
 
     with open(args.primers_tsv, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -115,7 +137,7 @@ def main():
                 "-p",
                 primer_file,
                 "-m",
-                str(args.mismatch),
+                str(mismatch),
                 "--bed",
                 genome,
             ]

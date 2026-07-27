@@ -14,7 +14,7 @@ rule gene_report:
         str(REPORTS / "{gene}_report.html")
     params:
         gene  = lambda wc: wc.gene,
-        genus = config["genus"]
+        config_file = "config/config.yaml"
     log:
         str(RESULTS / "logs" / "gene_report" / "{gene}.log")
     benchmark:
@@ -23,7 +23,7 @@ rule gene_report:
         """
         python workflow/scripts/gene_report.py \
             --gene {params.gene:q} \
-            --genus {params.genus:q} \
+            --config {params.config_file:q} \
             --primers-tsv {input.primers:q} \
             --amplicons-tsv {input.amplicons:q} \
             --diversity-png {input.diversity:q} \

@@ -1,5 +1,5 @@
 # ============================================================================
-# genus-primer-pipeline — main entry point (orchestrator)
+# genus-primer-pipeline - main entry point (orchestrator)
 #
 # For a given bacterial genus and one or more housekeeping genes:
 #   download genomes -> extract gene -> dereplicate -> align ->
@@ -15,15 +15,26 @@
 #   snakemake --cores 4
 # ============================================================================
 
+import sys
 from pathlib import Path
 
+WORKFLOW_DIR = Path(workflow.source_path("."))
+SCRIPTS_DIR = WORKFLOW_DIR / "scripts"
+sys.path.insert(0, str(SCRIPTS_DIR))
+
+from config_schema import apply_config_defaults, validate_config
+
 configfile: "config/config.yaml"
+
+
+config.update(apply_config_defaults(config))
+validate_config(config)
 
 wildcard_constraints:
     gene = r"[^./]+"
 
 # ---------------------------------------------------------------------------
-# Shared variables — defined ONCE here, used by every included module
+# Shared variables - defined ONCE here, used by every included module
 # ---------------------------------------------------------------------------
 GENUS = config["genus"]
 GENES = config["genes"]
@@ -42,14 +53,14 @@ REPORTS         = RESULTS / "reports"
 # ---------------------------------------------------------------------------
 # Include rule modules (paths relative to this Snakefile in workflow/)
 # ---------------------------------------------------------------------------
-include: "rules/download_genomes.smk"
-include: "rules/extract_gene.smk"
-include: "rules/cluster.smk"
-include: "rules/align.smk"
-include: "rules/design_primers.smk"
-include: "rules/check_primers.smk"
-include: "rules/in_silico_pcr.smk"
-include: "rules/reports.smk"
+include: workflow.source_path("rules/download_genomes.smk")
+include: workflow.source_path("rules/extract_gene.smk")
+include: workflow.source_path("rules/cluster.smk")
+include: workflow.source_path("rules/align.smk")
+include: workflow.source_path("rules/design_primers.smk")
+include: workflow.source_path("rules/check_primers.smk")
+include: workflow.source_path("rules/in_silico_pcr.smk")
+include: workflow.source_path("rules/reports.smk")
 
 # ---------------------------------------------------------------------------
 # Top-level target: one HTML report per gene

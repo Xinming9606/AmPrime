@@ -18,14 +18,17 @@
 #   pair_diversity, delta_GC, combined_score
 # =============================================================================
 
+
 import argparse
 import csv
 import logging
 import os
 
-import matplotlib.pyplot as plt
-import numpy as np
-from Bio import AlignIO
+from config_schema import load_config_file
+
+plt = None
+np = None
+AlignIO = None
 
 # ---------------------------------------------------------------------------
 # IUPAC constants
@@ -83,12 +86,12 @@ def _rev_comp(seq: str) -> str:
 
 
 def _iupac_encode(bases: str) -> str:
-    """Sorted unique base letters → IUPAC ambiguity code."""
+    """Sorted unique base letters to IUPAC ambiguity code."""
     key = "".join(sorted(set(bases.upper()) & _VALID_BASES))
     return _IUPAC_MAP.get(key, "N")
 
 
-def _shannon(col: np.ndarray, n_seqs: int) -> float:
+def _shannon(col, n_seqs: int) -> float:
     """Shannon entropy of a single alignment column."""
     _, counts = np.unique(col, return_counts=True)
     probs = counts / n_seqs
@@ -96,7 +99,7 @@ def _shannon(col: np.ndarray, n_seqs: int) -> float:
     return float(-np.sum(probs * np.log(probs)))
 
 
-def _consensus(dna_matrix: np.ndarray) -> np.ndarray:
+def _consensus(dna_matrix):
     """Most frequent base per column."""
     n = dna_matrix.shape[1]
     cons = np.empty(n, dtype="<U1")
@@ -106,7 +109,7 @@ def _consensus(dna_matrix: np.ndarray) -> np.ndarray:
     return cons
 
 
-def _rollmean(values: np.ndarray, k: int) -> np.ndarray:
+def _rollmean(values, k: int):
     """Rolling mean with NaN padding at edges (matches R's zoo::rollmean)."""
     result = np.full(len(values), np.nan)
     if k <= len(values):
@@ -122,7 +125,7 @@ def _rollmean(values: np.ndarray, k: int) -> np.ndarray:
 def _compute_position_annotations(
     dna_matrix: np.ndarray, n_seqs: int, min_allele_freq: float
 ):
-    """Return (pos_code, pos_fold) — IUPAC letter + fold for each column."""
+    """Return (pos_code, pos_fold): IUPAC letter and fold for each column."""
     aln_len = dna_matrix.shape[1]
     pos_code = np.empty(aln_len, dtype="<U1")
     pos_fold = np.ones(aln_len, dtype=int)
@@ -299,7 +302,7 @@ def _plot_diversity(
     if handles:
         ax.legend(handles=handles, loc="upper right")
 
-    ax.set_title(f"Sequence diversity — {os.path.basename(aln_file)}")
+    ax.set_title(f"Sequence diversity - {os.path.basename(aln_file)}")
     ax.set_xlabel("Alignment position (bp)")
     ax.set_ylabel("Shannon entropy")
     ax.set_ylim(-0.05, ymax)
@@ -319,22 +322,41 @@ def parse_args():
     parser.add_argument("--aln", required=True, help="Input aligned FASTA")
     parser.add_argument("--out-tsv", required=True, help="Output primer TSV")
     parser.add_argument("--out-plot", required=True, help="Output diversity PNG")
-    parser.add_argument("--primer-len", required=True, type=int)
-    parser.add_argument("--amplicon-min-len", required=True, type=int)
-    parser.add_argument("--amplicon-max-len", required=True, type=int)
-    parser.add_argument("--div-cut", required=True, type=float)
-    parser.add_argument("--gc-tol", required=True, type=float)
-    parser.add_argument("--min-allele-freq", default=0.05, type=float)
-    parser.add_argument("--max-degeneracy", default=16, type=int)
+    parser.add_argument("--config", help="Optional AmPrime config.yaml")
+    parser.add_argument("--gene", help="Gene name, used for per-gene config overrides")
+    parser.add_argument("--primer-len", type=int)
+    parser.add_argument("--amplicon-min-len", type=int)
+    parser.add_argument("--amplicon-max-len", type=int)
+    parser.add_argument("--div-cut", type=float)
+    parser.add_argument("--gc-tol", type=float)
+    parser.add_argument("--min-allele-freq", type=float)
+    parser.add_argument("--max-degeneracy", type=int)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
 
+def _required_param(name, value):
+    if value is None:
+        raise SystemExit(f"missing --{name.replace('_', '-')} or config setting: {name}")
+    return value
+
+
+def _param(cli_value, cfg, key):
+    return cli_value if cli_value is not None else cfg.get(key)
+
+
 def main():
     args = parse_args()
+
+    global AlignIO, np, plt
+    import matplotlib.pyplot as plt
+    import numpy as np
+    from Bio import AlignIO
+
     aln_file = args.aln
     out_tsv = args.out_tsv
     out_plot = args.out_plot
+    cfg = load_config_file(args.config) if args.config else {}
 
     log_path = args.log
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
@@ -346,13 +368,27 @@ def main():
     )
     log = logging.getLogger()
 
-    primer_len = args.primer_len
-    amplicon_min_len = args.amplicon_min_len
-    amplicon_max_len = args.amplicon_max_len
-    div_cut = args.div_cut
-    GC_tol = args.gc_tol
-    min_allele_freq = args.min_allele_freq
-    max_degeneracy = args.max_degeneracy
+    primer_len = _required_param("primer_len", _param(args.primer_len, cfg, "primer_len"))
+    amplicon_min_len = _required_param(
+        "amplicon_min_len", _param(args.amplicon_min_len, cfg, "amplicon_min_len")
+    )
+    amplicon_max_len = _required_param(
+        "amplicon_max_len", _param(args.amplicon_max_len, cfg, "amplicon_max_len")
+    )
+    if args.div_cut is not None:
+        div_cut = args.div_cut
+    elif args.gene:
+        div_cut = cfg.get("div_cut_per_gene", {}).get(args.gene, cfg.get("div_cut"))
+    else:
+        div_cut = cfg.get("div_cut")
+    div_cut = _required_param("div_cut", div_cut)
+    GC_tol = _required_param("GC_tol", _param(args.gc_tol, cfg, "GC_tol"))
+    min_allele_freq = _required_param(
+        "min_allele_freq", _param(args.min_allele_freq, cfg, "min_allele_freq")
+    )
+    max_degeneracy = _required_param(
+        "max_degeneracy", _param(args.max_degeneracy, cfg, "max_degeneracy")
+    )
 
     log.info("Parameters:")
     for k, v in [
@@ -370,10 +406,7 @@ def main():
     # --- 1. Load alignment ------------------------------------------------
     records = list(AlignIO.parse(aln_file, "fasta"))
     if len(records) < 2:
-        msg = (
-            f"Need at least 2 sequences to estimate diversity; "
-            f"found {len(records)}."
-        )
+        msg = f"Need at least 2 sequences to estimate diversity; found {len(records)}."
         log.warning(msg)
         _write_empty_tsv(out_tsv)
         _plot_placeholder(msg, aln_file, out_plot, log)
@@ -402,18 +435,12 @@ def main():
 
     # --- 5. Build kmer table ----------------------------------------------
     if aln_len < primer_len:
-        log.warning("Alignment (%d bp) < primer_len (%d bp). Empty TSV.", aln_len, primer_len)
+        log.warning(
+            "Alignment (%d bp) < primer_len (%d bp). Empty TSV.", aln_len, primer_len
+        )
         _write_empty_tsv(out_tsv)
         _plot_diversity(
-            divs,
-            roll_means,
-            roll_k,
-            [],
-            0,
-            primer_len,
-            aln_file,
-            out_plot,
-            log,
+            divs, roll_means, roll_k, [], 0, primer_len, aln_file, out_plot, log
         )
         return
 
@@ -432,15 +459,7 @@ def main():
         )
         _write_empty_tsv(out_tsv)
         _plot_diversity(
-            divs,
-            roll_means,
-            roll_k,
-            [],
-            0,
-            primer_len,
-            aln_file,
-            out_plot,
-            log,
+            divs, roll_means, roll_k, [], 0, primer_len, aln_file, out_plot, log
         )
         return
 
@@ -453,21 +472,13 @@ def main():
         log.info("No valid primer pairs found. Empty TSV.")
         _write_empty_tsv(out_tsv)
         _plot_diversity(
-            divs,
-            roll_means,
-            roll_k,
-            [],
-            0,
-            primer_len,
-            aln_file,
-            out_plot,
-            log,
+            divs, roll_means, roll_k, [], 0, primer_len, aln_file, out_plot, log
         )
         return
 
     # --- 8. Write TSV -----------------------------------------------------
     _write_tsv(results, out_tsv)
-    log.info("Wrote %d primer pairs → %s", len(results), out_tsv)
+    log.info("Wrote %d primer pairs -> %s", len(results), out_tsv)
 
     # --- 9. Diversity plot ------------------------------------------------
     _plot_diversity(

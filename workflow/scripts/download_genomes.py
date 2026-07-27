@@ -1,0 +1,128 @@
+#!/usr/bin/env python3
+# =============================================================================
+# download_genomes.py
+#
+# Download genomic, CDS, and RNA FASTA files for a bacterial genus with
+# ncbi-genome-download.
+# =============================================================================
+
+import argparse
+import gzip
+import logging
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+from config_schema import load_config_file
+
+log = logging.getLogger(__name__)
+
+
+def configure_logging(log_path):
+    os.makedirs(os.path.dirname(log_path), exist_ok=True)
+    logging.basicConfig(
+        filename=log_path,
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+
+
+def run_download(genus, assembly_level, fmt, out_dir):
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    cmd = [
+        "ncbi-genome-download",
+        "bacteria",
+        "--genera",
+        genus,
+        "--assembly-levels",
+        assembly_level,
+        "--formats",
+        fmt,
+        "--flat-output",
+        "--output-folder",
+        out_dir,
+    ]
+    log.info("Running: %s", " ".join(cmd))
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.stdout:
+        log.info(result.stdout.rstrip())
+    if result.stderr:
+        log.info(result.stderr.rstrip())
+    if result.returncode != 0:
+        log.error("ncbi-genome-download failed with exit code %d", result.returncode)
+        return result.returncode
+    return 0
+
+
+def decompress_gzip_files(*directories):
+    for directory in directories:
+        for gz_path in Path(directory).rglob("*.gz"):
+            out_path = gz_path.with_suffix("")
+            log.info("Decompressing %s -> %s", gz_path, out_path)
+            with gzip.open(gz_path, "rb") as src, open(out_path, "wb") as dst:
+                shutil.copyfileobj(src, dst)
+            gz_path.unlink()
+
+
+def count_fna(directory):
+    return sum(1 for _ in Path(directory).rglob("*.fna"))
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Download genus FASTA files.")
+    parser.add_argument("--config", help="Optional AmPrime config.yaml")
+    parser.add_argument("--genus")
+    parser.add_argument("--assembly-level")
+    parser.add_argument("--genomic-dir", required=True)
+    parser.add_argument("--cds-dir", required=True)
+    parser.add_argument("--rna-dir", required=True)
+    parser.add_argument("--log", required=True)
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    configure_logging(args.log)
+
+    cfg = load_config_file(args.config) if args.config else {}
+    genus = args.genus or cfg.get("genus")
+    assembly_level = args.assembly_level or cfg.get("assembly_level")
+    if not genus:
+        raise SystemExit("missing --genus or config setting: genus")
+    if not assembly_level:
+        raise SystemExit("missing --assembly-level or config setting: assembly_level")
+
+    downloads = [
+        ("fasta", args.genomic_dir),
+        ("cds-fasta", args.cds_dir),
+        ("rna-fasta", args.rna_dir),
+    ]
+    for fmt, out_dir in downloads:
+        code = run_download(genus, assembly_level, fmt, out_dir)
+        if code != 0:
+            return code
+
+    decompress_gzip_files(args.genomic_dir, args.cds_dir, args.rna_dir)
+
+    n_gen = count_fna(args.genomic_dir)
+    n_cds = count_fna(args.cds_dir)
+    n_rna = count_fna(args.rna_dir)
+    log.info(
+        "Downloaded: %d genomic, %d CDS, %d RNA files for genus %s",
+        n_gen,
+        n_cds,
+        n_rna,
+        genus,
+    )
+
+    if n_gen == 0:
+        log.error("No genomic FASTA downloaded. Check genus name and assembly level.")
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

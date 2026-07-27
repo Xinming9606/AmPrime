@@ -6,8 +6,8 @@
 # 3'-end stability for every primer pair, then drops pairs that fail any
 # configurable threshold.  Writes a filtered TSV with extra quality columns.
 #
-# All ΔG calculations use SantaLucia 1998 nearest-neighbour parameters in
-# pure Python — no primer3 C library required.  Works on any OS.
+# All dG calculations use SantaLucia 1998 nearest-neighbour parameters in
+# pure Python; no primer3 C library required. Works on any OS.
 #
 # CLI:
 #   python check_primers.py --in-tsv primers_raw.tsv --out-tsv primers.tsv \
@@ -19,8 +19,10 @@ import csv
 import logging
 import os
 
+from config_schema import load_config_file
+
 # ---------------------------------------------------------------------------
-# SantaLucia 1998 unified nearest-neighbour ΔG (kcal/mol, 37 °C, 1 M NaCl)
+# SantaLucia 1998 unified nearest-neighbour dG (kcal/mol, 37 C, 1 M NaCl)
 # ---------------------------------------------------------------------------
 NN_DG = {
     "AA": -1.00,
@@ -42,8 +44,8 @@ NN_DG = {
 }
 
 SYMMETRY_DG = 0.43  # self-complementary duplex penalty
-INIT_AT = 2.30  # initiation — terminal A·T
-INIT_GC = 2.55  # initiation — terminal G·C
+INIT_AT = 2.30  # initiation, terminal A/T
+INIT_GC = 2.55  # initiation, terminal G/C
 MIN_STEM = 2  # minimum stem length for hairpin
 MIN_LOOP = 3  # minimum loop size for hairpin
 
@@ -60,9 +62,9 @@ def _reverse_complement(seq: str) -> str:
 
 
 def _duplex_dg(seq_5p: str) -> float:
-    """ΔG of a duplex scored from one strand (5'→3'), SantaLucia 1998.
+    """dG of a duplex scored from one strand (5' to 3'), SantaLucia 1998.
 
-    seq_5p is the sequence of one strand in 5'→3' orientation.  The
+    seq_5p is the sequence of one strand in 5' to 3' orientation. The
     complementary strand is assumed to pair perfectly.
     """
     n = len(seq_5p)
@@ -77,13 +79,13 @@ def _duplex_dg(seq_5p: str) -> float:
 
 
 # ---------------------------------------------------------------------------
-# Dimer ΔG (homo- and hetero-)
+# Dimer dG (homo- and hetero-)
 # ---------------------------------------------------------------------------
 def _align_dg(seq_a: str, seq_b_rc: str) -> float:
-    """Best (most negative) ΔG of antiparallel alignment of seq_a vs seq_b_rc.
+    """Best (most negative) dG of antiparallel alignment of seq_a vs seq_b_rc.
 
-    seq_b_rc is the reverse complement of some other sequence in 5'→3'.
-    We slide the two 5'→3' strands across each other and score every
+    seq_b_rc is the reverse complement of some other sequence in 5' to 3'.
+    We slide the two 5' to 3' strands across each other and score every
     overlapping region.
     """
     best = 0.0
@@ -105,24 +107,24 @@ def _align_dg(seq_a: str, seq_b_rc: str) -> float:
 
 
 def calc_homodimer_dg(seq: str) -> float:
-    """Minimum homodimer ΔG (self-dimer)."""
+    """Minimum homodimer dG (self-dimer)."""
     return _align_dg(seq, _reverse_complement(seq))
 
 
 def calc_heterodimer_dg(seq_a: str, seq_b: str) -> float:
-    """Minimum heterodimer ΔG (cross-dimer)."""
+    """Minimum heterodimer dG (cross-dimer)."""
     return _align_dg(seq_a, _reverse_complement(seq_b))
 
 
 # ---------------------------------------------------------------------------
-# Hairpin ΔG
+# Hairpin dG
 # ---------------------------------------------------------------------------
 def calc_hairpin_dg(seq: str) -> float:
-    """Minimum hairpin ΔG — find the most stable stem within the sequence.
+    """Minimum hairpin dG: find the most stable stem within the sequence.
 
     Enumerates all possible stem-start (i), stem-end-start (j) and stem
     length (k) combinations with a minimum loop of MIN_LOOP bases between the
-    two stem halves.  Because primer oligos are short (15–35 nt) the
+    two stem halves. Because primer oligos are short (15-35 nt), the
     triple-loop is harmless.
     """
     n = len(seq)
@@ -144,7 +146,7 @@ def calc_hairpin_dg(seq: str) -> float:
 # 3'-end stability
 # ---------------------------------------------------------------------------
 def calc_3end_dg(seq: str, n_bases: int = 5) -> float:
-    """ΔG of the 3'-most *n_bases* of *seq* (kcal/mol, SantaLucia 1998)."""
+    """dG of the 3'-most *n_bases* of *seq* (kcal/mol, SantaLucia 1998)."""
     end = seq[-n_bases:].upper()
     if len(end) < 2:
         return 0.0
@@ -177,7 +179,7 @@ def check_pair(row: dict, thresholds: dict) -> dict:
         "end3_rev_dg": calc_3end_dg(rev),
     }
 
-    # thresholds: more negative ΔG = stronger secondary structure = worse
+    # thresholds: more negative dG = stronger secondary structure = worse
     checks = [
         ("hairpin_fwd_dg", thresholds.get("max_hairpin_dg")),
         ("hairpin_rev_dg", thresholds.get("max_hairpin_dg")),
@@ -202,14 +204,21 @@ def check_pair(row: dict, thresholds: dict) -> dict:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def _nullable_float(value):
+    if value.lower() in {"none", "null", "na"}:
+        return None
+    return float(value)
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Filter primer pairs by QC metrics.")
     parser.add_argument("--in-tsv", required=True)
     parser.add_argument("--out-tsv", required=True)
-    parser.add_argument("--max-hairpin-dg", type=float)
-    parser.add_argument("--max-homodimer-dg", type=float)
-    parser.add_argument("--max-heterodimer-dg", type=float)
-    parser.add_argument("--max-3end-dg", type=float)
+    parser.add_argument("--config", help="Optional AmPrime config.yaml for thresholds")
+    parser.add_argument("--max-hairpin-dg", type=_nullable_float, default=argparse.SUPPRESS)
+    parser.add_argument("--max-homodimer-dg", type=_nullable_float, default=argparse.SUPPRESS)
+    parser.add_argument("--max-heterodimer-dg", type=_nullable_float, default=argparse.SUPPRESS)
+    parser.add_argument("--max-3end-dg", type=_nullable_float, default=argparse.SUPPRESS)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -230,11 +239,24 @@ def main():
     out_tsv = args.out_tsv
 
     thresholds = {
-        "max_hairpin_dg": args.max_hairpin_dg,
-        "max_homodimer_dg": args.max_homodimer_dg,
-        "max_heterodimer_dg": args.max_heterodimer_dg,
-        "max_3end_dg": args.max_3end_dg,
+        "max_hairpin_dg": None,
+        "max_homodimer_dg": None,
+        "max_heterodimer_dg": None,
+        "max_3end_dg": None,
     }
+    if args.config:
+        cfg = load_config_file(args.config)
+        thresholds.update({key: cfg.get(key) for key in thresholds})
+
+    cli_thresholds = {
+        "max_hairpin_dg": "max_hairpin_dg",
+        "max_homodimer_dg": "max_homodimer_dg",
+        "max_heterodimer_dg": "max_heterodimer_dg",
+        "max_3end_dg": "max_3end_dg",
+    }
+    for threshold_key, arg_name in cli_thresholds.items():
+        if hasattr(args, arg_name):
+            thresholds[threshold_key] = getattr(args, arg_name)
 
     log.info("Input  : %s", in_tsv)
     log.info("Output : %s", out_tsv)
@@ -246,7 +268,7 @@ def main():
         rows = list(reader)
 
     if not rows:
-        log.warning("Input TSV is empty — writing empty output.")
+        log.warning("Input TSV is empty; writing empty output.")
         os.makedirs(os.path.dirname(out_tsv), exist_ok=True)
         with open(out_tsv, "w", newline="") as fh:
             w = csv.writer(fh, delimiter="\t")
@@ -288,7 +310,7 @@ def main():
     passed = [r for r in checked if r["qc_pass"]]
     n_dropped = len(checked) - len(passed)
     log.info(
-        "Checked %d pairs — %d passed, %d dropped.",
+        "Checked %d pairs; %d passed, %d dropped.",
         len(checked),
         len(passed),
         n_dropped,

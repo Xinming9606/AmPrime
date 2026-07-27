@@ -10,28 +10,13 @@
 # =============================================================================
 
 
-def _optional_float_arg(flag, value):
-    return "" if value is None else f"{flag} {value}"
-
-
 rule check_primers:
     input:
         str(PRIMERS / "{gene}_primers_raw.tsv")
     output:
         str(PRIMERS / "{gene}_primers.tsv")
     params:
-        max_hairpin_dg    = config.get("max_hairpin_dg"),
-        max_homodimer_dg  = config.get("max_homodimer_dg"),
-        max_heterodimer_dg = config.get("max_heterodimer_dg"),
-        max_3end_dg        = config.get("max_3end_dg"),
-        qc_args = lambda wc: " ".join(
-            arg for arg in [
-                _optional_float_arg("--max-hairpin-dg", config.get("max_hairpin_dg")),
-                _optional_float_arg("--max-homodimer-dg", config.get("max_homodimer_dg")),
-                _optional_float_arg("--max-heterodimer-dg", config.get("max_heterodimer_dg")),
-                _optional_float_arg("--max-3end-dg", config.get("max_3end_dg")),
-            ] if arg
-        )
+        config_file = "config/config.yaml"
     log:
         str(RESULTS / "logs" / "check_primers" / "{gene}.log")
     benchmark:
@@ -41,6 +26,6 @@ rule check_primers:
         python workflow/scripts/check_primers.py \
             --in-tsv {input:q} \
             --out-tsv {output:q} \
-            {params.qc_args} \
+            --config {params.config_file:q} \
             --log {log:q}
         """

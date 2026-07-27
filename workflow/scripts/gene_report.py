@@ -2,7 +2,7 @@
 # =============================================================================
 # gene_report.py - self-contained HTML report for a single gene
 #
-# Snakemake script.  Requires markdown (conda-forge).
+# Standalone CLI used by Snakemake. Requires markdown (conda-forge).
 # Builds the body in Markdown, converts to HTML, and wraps in a styled page.
 # =============================================================================
 
@@ -14,7 +14,7 @@ import os
 from datetime import datetime
 from html import escape
 
-import markdown
+from config_schema import load_config_file
 
 # =============================================================================
 # HTML page shell - loaded from separate .html file
@@ -179,7 +179,8 @@ def _build_body(gene, genus, timestamp, primers, top_primer, pcr, diversity_img)
 def parse_args():
     parser = argparse.ArgumentParser(description="Build a per-gene HTML report.")
     parser.add_argument("--gene", required=True)
-    parser.add_argument("--genus", required=True)
+    parser.add_argument("--genus")
+    parser.add_argument("--config", help="Optional AmPrime config.yaml")
     parser.add_argument("--primers-tsv", required=True)
     parser.add_argument("--amplicons-tsv", required=True)
     parser.add_argument("--diversity-png", required=True)
@@ -190,6 +191,9 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    import markdown
+
     log_path = args.log
     os.makedirs(os.path.dirname(log_path), exist_ok=True)
     logging.basicConfig(
@@ -201,7 +205,10 @@ def main():
     log = logging.getLogger()
 
     gene = args.gene
-    genus = args.genus
+    cfg = load_config_file(args.config) if args.config else {}
+    genus = args.genus or cfg.get("genus")
+    if not genus:
+        raise SystemExit("missing --genus or config setting: genus")
 
     # -- read inputs -------------------------------------------------------
     primers = _read_tsv(args.primers_tsv) if os.path.isfile(args.primers_tsv) else []
