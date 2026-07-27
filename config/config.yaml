@@ -48,9 +48,15 @@ primer_len: 20
 amplicon_min_len: 300
 amplicon_max_len: 1000
 
-# Shannon entropy cutoff for a primer window to be considered conserved
+# Shannon entropy cutoff for a primer window to be considered conserved.
 # Lower = more stringent. If no primers are found, raise this value.
+# Use div_cut_per_gene to override for individual genes (e.g. rRNA vs CDS).
 div_cut: 2.0
+div_cut_per_gene: {}
+# Example:
+#   div_cut_per_gene:
+#     16S: 3.0
+#     rpoB: 1.5
 
 # Maximum allowed GC% difference between the two primers in a pair
 GC_tol: 0.1

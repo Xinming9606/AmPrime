@@ -20,7 +20,7 @@ rule design_primers:
         primer_len       = config["primer_len"],
         amplicon_min_len = config["amplicon_min_len"],
         amplicon_max_len = config["amplicon_max_len"],
-        div_cut          = config["div_cut"],
+        div_cut          = lambda wc: config.get("div_cut_per_gene", {}).get(wc.gene, config["div_cut"]),
         GC_tol           = config["GC_tol"]
     log:
         str(RESULTS / "logs" / "design_primers" / "{gene}.log")
