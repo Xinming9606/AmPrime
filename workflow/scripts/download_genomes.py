@@ -60,6 +60,22 @@ def run_download(genus, assembly_level, fmt, out_dir):
     return 0
 
 
+def reset_download_outputs(downloads, manifest):
+    """Remove outputs managed by this rule before a fresh download."""
+    for _, _, out_dir in downloads:
+        path = Path(out_dir)
+        if path.exists():
+            log.info("Removing stale download directory: %s", path)
+            shutil.rmtree(path)
+        path.mkdir(parents=True, exist_ok=True)
+
+    if manifest:
+        manifest_path = Path(manifest)
+        if manifest_path.exists():
+            log.info("Removing stale download manifest: %s", manifest_path)
+            manifest_path.unlink()
+
+
 def decompress_gzip_files(*directories):
     for directory in directories:
         for gz_path in Path(directory).rglob("*.gz"):
@@ -140,6 +156,8 @@ def main():
         ("cds", "cds-fasta", args.cds_dir),
         ("rna", "rna-fasta", args.rna_dir),
     ]
+    reset_download_outputs(downloads, args.manifest)
+
     for _, fmt, out_dir in downloads:
         code = run_download(genus, assembly_level, fmt, out_dir)
         if code != 0:

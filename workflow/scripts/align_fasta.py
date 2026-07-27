@@ -8,11 +8,13 @@
 # =============================================================================
 
 import argparse
+import csv
 import logging
 import os
 import shutil
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
@@ -144,6 +146,57 @@ def _run_and_log(cmd, stdout=None):
     return result
 
 
+def _backend_executable(backend):
+    if backend == "python":
+        return sys.executable
+    return shutil.which(backend) or ""
+
+
+def _backend_version(backend):
+    if backend == "python":
+        return sys.version.split()[0]
+
+    exe = shutil.which(backend)
+    if not exe:
+        return ""
+
+    try:
+        result = subprocess.run(
+            [exe, "--version"], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+
+    text = (result.stdout or result.stderr).strip().splitlines()
+    return text[0] if text else ""
+
+
+def write_alignment_metadata(path, row):
+    if not path:
+        return
+
+    out_path = Path(path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = [
+        "generated_at",
+        "requested_backend",
+        "backend_used",
+        "fallback_used",
+        "backend_executable",
+        "backend_version",
+        "n_input_sequences",
+        "n_output_sequences",
+        "input_total_bp",
+        "elapsed_seconds",
+    ]
+    with out_path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        writer.writerow(
+            {"generated_at": datetime.now(UTC).isoformat(timespec="seconds"), **row}
+        )
+
+
 def run_mafft(input_path, output_path):
     exe = shutil.which("mafft")
     if not exe:
@@ -178,10 +231,7 @@ def run_muscle(input_path, output_path):
 
 
 def run_external_alignment(backend, input_path, output_path):
-    runners = {
-        "mafft": run_mafft,
-        "muscle": run_muscle,
-    }
+    runners = {"mafft": run_mafft, "muscle": run_muscle}
     return runners[backend](input_path, output_path)
 
 
@@ -231,6 +281,7 @@ def parse_args():
     parser.add_argument("--output", required=True)
     parser.add_argument("--config", help="Optional AmPrime config.yaml")
     parser.add_argument("--backend", choices=sorted(ALIGNMENT_BACKENDS))
+    parser.add_argument("--metadata", help="Optional alignment metadata TSV")
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -253,6 +304,21 @@ def main():
     if n_in < 2:
         shutil.copyfile(args.input, args.output)
         log.info("Only %d sequence(s); skipped alignment", n_in)
+        elapsed = perf_counter() - started
+        write_alignment_metadata(
+            args.metadata,
+            {
+                "requested_backend": requested_backend,
+                "backend_used": "skipped",
+                "fallback_used": False,
+                "backend_executable": "",
+                "backend_version": "",
+                "n_input_sequences": n_in,
+                "n_output_sequences": n_in,
+                "input_total_bp": sum(len(seq) for _, seq in records),
+                "elapsed_seconds": round(elapsed, 3),
+            },
+        )
         return 0
 
     lengths = [len(seq) for _, seq in records]
@@ -274,6 +340,20 @@ def main():
 
     n_out = count_fasta_records(args.output)
     elapsed = perf_counter() - started
+    write_alignment_metadata(
+        args.metadata,
+        {
+            "requested_backend": requested_backend,
+            "backend_used": backend_used,
+            "fallback_used": requested_backend == "auto" and backend_used == "python",
+            "backend_executable": _backend_executable(backend_used),
+            "backend_version": _backend_version(backend_used),
+            "n_input_sequences": n_in,
+            "n_output_sequences": n_out,
+            "input_total_bp": total_bp,
+            "elapsed_seconds": round(elapsed, 3),
+        },
+    )
     if backend_used == "python" and len({len(seq) for _, seq in records}) == 1:
         log.info(
             "All %d sequences have equal length; skipped pairwise alignment in %.2f s",
