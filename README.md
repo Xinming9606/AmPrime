@@ -29,11 +29,11 @@ For each gene independently, AmPrime runs this pipeline:
 ```mermaid
 flowchart LR
     A[Download genomes<br/>NCBI] --> B[Extract gene<br/>CDS + rRNA]
-    B --> C[Dereplicate<br/>Python 97%]
-    C --> D[Align<br/>Python]
+    B --> C[Dereplicate]
+    C --> D[Align]
     D --> E[Design primers<br/>entropy scan]
     E --> F[Quality filter<br/>hairpin + dimer]
-    F --> G[In silico PCR<br/>Python]
+    F --> G[In silico PCR]
     G --> H[HTML report]
 ```
 
@@ -42,10 +42,11 @@ The main idea is simple:
 1. Download genomic, CDS, and RNA FASTA files for the target genus.
 2. Extract the target gene from CDS/RNA annotations.
 3. Dereplicate near-identical sequences so redundant strains do not dominate.
-4. Align representative sequences.
+4. Align representative sequences with the configured alignment backend.
 5. Find conserved primer windows that flank a variable amplicon region.
 6. Filter primer pairs for simple secondary-structure risks.
-7. Validate the top pair against full genomes with a Python primer scanner.
+7. Validate the best QC-passed candidates against full genomes with a Python
+   primer scanner.
 8. Write a browsable HTML report.
 
 Missing genes are handled gracefully. If a gene cannot be found, the pipeline
@@ -67,7 +68,7 @@ pixi run dry-run
 # Set your genus, genes, and optional gene aliases.
 
 # 5. Run the pipeline
-pixi run snakemake --cores 4
+pixi run pipeline
 ```
 
 Reports are written to:
@@ -94,6 +95,7 @@ genes:
   - uvrA
 
 assembly_level: complete
+alignment_backend: python
 
 primer_len: 20
 amplicon_min_len: 300
@@ -112,6 +114,7 @@ Useful options:
 | `genus`                                | Bacterial genus name recognized by NCBI.                                                        |
 | `genes`                                | One or more gene names. Each gene is processed independently.                                   |
 | `assembly_level`                       | NCBI assembly level: `complete`, `chromosome`, `scaffold`, or `contig`.                         |
+| `alignment_backend`                    | Alignment backend: `python`, `auto`, `mafft`, or `muscle`.                                      |
 | `primer_len`                           | Primer length in bp.                                                                            |
 | `amplicon_min_len`, `amplicon_max_len` | Target amplicon size range.                                                                     |
 | `div_cut`                              | Maximum Shannon entropy allowed for conserved primer windows. Raise it if no primers are found. |
@@ -212,9 +215,11 @@ python workflow/scripts/gene_report.py --help
 Pixi is the primary project manager. It creates the conda/bioconda environment
 from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`.
 The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows.
-Intel macOS is not supported. Sequence processing is implemented in Python so
-the workflow does not depend on platform-specific `vsearch`, `MUSCLE`, or
-`seqkit` binaries.
+Intel macOS is not supported. Sequence processing defaults to Python so the
+workflow does not depend on platform-specific `vsearch`, `MUSCLE`, `MAFFT`, or
+`seqkit` binaries. For stricter multiple sequence alignment, set
+`alignment_backend: auto`, `mafft`, or `muscle` after installing that aligner on
+your platform.
 
 Useful commands:
 
@@ -222,6 +227,7 @@ Useful commands:
 pixi run compile
 pixi run smoke
 pixi run dry-run
+pixi run pipeline
 pixi run ci
 pixi run package
 ```
@@ -269,12 +275,12 @@ The workflow dependencies are declared in:
 pixi.toml
 ```
 
-The legacy micromamba/conda environment file is kept for users who prefer that
-tooling:
+The legacy micromamba/conda environment file mirrors the default Pixi
+dependencies for users who prefer that tooling:
 
 ```bash
 micromamba env create -f workflow/envs/environment.yaml
-micromamba activate primer-pipeline
+micromamba activate amprime
 snakemake --cores 4
 ```
 
@@ -284,13 +290,18 @@ That environment file lives at:
 workflow/envs/environment.yaml
 ```
 
-The environment includes Snakemake, Python, Biopython, NumPy, Matplotlib,
-`ncbi-genome-download`, PyYAML, and Python `markdown`.
+Both dependency files include the same default runtime: Snakemake, Python 3.12,
+Biopython, NumPy, Matplotlib, `ncbi-genome-download`, PyYAML, and Python
+`markdown`. Optional MAFFT/MUSCLE alignment backends are not installed by
+default; install one separately before selecting it with `alignment_backend`.
 
 ## Limitations
 
 - Off-target specificity outside the target genus is not checked yet.
 - Primer windows are derived from the alignment consensus.
+- The default Python alignment backend is a cross-platform first-pass fallback;
+  use MAFFT or MUSCLE for higher-quality multiple sequence alignment when
+  available.
 - Degenerate-base handling is conservative.
 - Very large genera can take a long time to download, align, and scan in Python.
 
