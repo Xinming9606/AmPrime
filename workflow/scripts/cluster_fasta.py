@@ -2,17 +2,21 @@
 # =============================================================================
 # cluster_fasta.py
 #
-# Dereplicate FASTA records with vsearch cluster_fast. Empty input produces an
-# empty centroid FASTA so downstream per-gene reporting can continue.
+# Dereplicate FASTA records with a small cross-platform Python implementation.
+# Empty input produces an empty centroid FASTA so downstream per-gene reporting
+# can continue.
 # =============================================================================
 
 import argparse
 import logging
 import os
-import subprocess
 import sys
+from collections import defaultdict
+from math import ceil, floor
 
 log = logging.getLogger(__name__)
+
+_GLOBALXX_ALIGNER = None
 
 
 def configure_logging(log_path):
@@ -26,16 +30,112 @@ def configure_logging(log_path):
 
 
 def count_fasta_records(path):
-    n = 0
+    return sum(1 for _ in parse_fasta(path))
+
+
+def parse_fasta(path):
+    header = None
+    seq_parts = []
     with open(path, encoding="utf-8-sig") as fh:
         for line in fh:
+            line = line.rstrip()
             if line.startswith(">"):
-                n += 1
-    return n
+                if header is not None:
+                    yield header, "".join(seq_parts)
+                header = line
+                seq_parts = []
+            else:
+                seq_parts.append(line)
+    if header is not None:
+        yield header, "".join(seq_parts)
+
+
+def write_fasta(records, path):
+    with open(path, "w", encoding="utf-8") as fh:
+        for header, seq in records:
+            fh.write(header + "\n")
+            fh.writelines(seq[i : i + 80] + "\n" for i in range(0, len(seq), 80))
+
+
+def same_length_identity(seq_a, seq_b):
+    matches = sum(a == b for a, b in zip(seq_a, seq_b, strict=False))
+    return matches / len(seq_a)
+
+
+def length_identity_upper_bound(len_a, len_b):
+    if not len_a or not len_b:
+        return 0.0
+    return min(len_a, len_b) / max(len_a, len_b)
+
+
+def globalxx_aligner():
+    global _GLOBALXX_ALIGNER
+    if _GLOBALXX_ALIGNER is None:
+        from Bio.Align import PairwiseAligner
+
+        aligner = PairwiseAligner()
+        aligner.mode = "global"
+        aligner.match_score = 1
+        aligner.mismatch_score = 0
+        aligner.open_gap_score = 0
+        aligner.extend_gap_score = 0
+        _GLOBALXX_ALIGNER = aligner
+    return _GLOBALXX_ALIGNER
+
+
+def sequence_identity(seq_a, seq_b):
+    """Return an approximate global identity for clustering."""
+    if not seq_a or not seq_b:
+        return 0.0
+    if len(seq_a) == len(seq_b):
+        return same_length_identity(seq_a, seq_b)
+
+    matches = globalxx_aligner().align(seq_a, seq_b).score
+    return matches / max(len(seq_a), len(seq_b))
+
+
+def cluster_records(records, identity):
+    """Greedy centroid clustering in input order."""
+    if not 0 < identity <= 1:
+        raise ValueError("--identity must be greater than 0 and at most 1")
+
+    centroids = []
+    centroids_by_length = defaultdict(list)
+    seen_sequences = set()
+
+    for header, seq in records:
+        seq_norm = seq.upper()
+        if seq_norm in seen_sequences:
+            continue
+
+        seq_len = len(seq_norm)
+        min_len = ceil(identity * seq_len)
+        max_len = floor(seq_len / identity)
+        redundant = False
+
+        for length in range(min_len, max_len + 1):
+            for centroid_seq in centroids_by_length.get(length, []):
+                if (
+                    length_identity_upper_bound(seq_len, len(centroid_seq)) >= identity
+                    and sequence_identity(seq_norm, centroid_seq) >= identity
+                ):
+                    redundant = True
+                    break
+            if redundant:
+                break
+
+        if redundant:
+            seen_sequences.add(seq_norm)
+            continue
+
+        centroids.append((header, seq))
+        centroids_by_length[seq_len].append(seq_norm)
+        seen_sequences.add(seq_norm)
+    return centroids
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Cluster FASTA records with vsearch.")
+    parser = argparse.ArgumentParser(description="Cluster FASTA records.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--identity", required=True, type=float)
@@ -48,32 +148,15 @@ def main():
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
-    n_in = count_fasta_records(args.input)
+    records = list(parse_fasta(args.input))
+    n_in = len(records)
     if n_in == 0:
         open(args.output, "w", encoding="utf-8").close()
         log.info("No input sequences; wrote empty centroids FASTA")
         return 0
 
-    cmd = [
-        "vsearch",
-        "--cluster_fast",
-        args.input,
-        "--strand",
-        "both",
-        "--id",
-        str(args.identity),
-        "--centroids",
-        args.output,
-    ]
-    log.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    if result.stdout:
-        log.info(result.stdout.rstrip())
-    if result.stderr:
-        log.info(result.stderr.rstrip())
-    if result.returncode != 0:
-        log.error("vsearch failed with exit code %d", result.returncode)
-        return result.returncode
+    centroids = cluster_records(records, args.identity)
+    write_fasta(centroids, args.output)
 
     n_out = count_fasta_records(args.output)
     log.info("Clustered %d sequences into %d centroids", n_in, n_out)

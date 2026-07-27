@@ -1,0 +1,24 @@
+[workspace]
+name = "amprime"
+version = "0.1.0"
+description = "Amplicon-sequencing primer design workflow for bacterial genera"
+authors = ["AmPrime contributors"]
+channels = ["conda-forge", "bioconda"]
+platforms = ["linux-64", "osx-arm64", "win-64"]
+
+[dependencies]
+python = "3.12.*"
+snakemake-minimal = ">=8"
+biopython = "*"
+numpy = "*"
+matplotlib-base = "*"
+pyyaml = "*"
+ncbi-genome-download = "*"
+markdown = "*"
+
+[tasks]
+compile = "python tools/compile_project.py"
+smoke = "python tools/smoke_project.py"
+dry-run = "snakemake -n"
+ci = { depends-on = ["compile", "smoke", "dry-run"] }
+package = "python tools/package_release.py"

@@ -2,8 +2,8 @@
 # =============================================================================
 # in_silico_pcr.py
 #
-# Validate the top-ranked primer pair against full genome assemblies using
-# `seqkit amplicon`.
+# Validate the top-ranked primer pair against full genome assemblies with a
+# cross-platform Python primer scanner.
 # =============================================================================
 
 import argparse
@@ -11,9 +11,8 @@ import csv
 import glob
 import logging
 import os
-import subprocess
 import sys
-import tempfile
+from bisect import bisect_left, bisect_right
 
 from config_schema import load_config_file
 
@@ -28,6 +27,28 @@ OUT_COLS = [
     "amplification_rate",
     "mean_amplicon_len",
 ]
+
+IUPAC_BASES = {
+    "A": frozenset("A"),
+    "C": frozenset("C"),
+    "G": frozenset("G"),
+    "T": frozenset("T"),
+    "R": frozenset("AG"),
+    "Y": frozenset("CT"),
+    "M": frozenset("AC"),
+    "K": frozenset("GT"),
+    "S": frozenset("CG"),
+    "W": frozenset("AT"),
+    "B": frozenset("CGT"),
+    "D": frozenset("AGT"),
+    "H": frozenset("ACT"),
+    "V": frozenset("ACG"),
+    "N": frozenset("ACGT"),
+}
+
+IUPAC_COMPLEMENT = str.maketrans(
+    "ACGTRYMKSWHBVDNacgtrymkswhbvdn", "TGCAYRKMSWDVBHNtgcayrkmswdvbhn"
+)
 
 
 def configure_logging(log_path):
@@ -49,8 +70,78 @@ def write_summary(rows, out_tsv):
             w.writerow(row)
 
 
+def parse_fasta(path):
+    header = None
+    seq_parts = []
+    with open(path, encoding="utf-8-sig") as fh:
+        for line in fh:
+            line = line.rstrip()
+            if line.startswith(">"):
+                if header is not None:
+                    yield header, "".join(seq_parts)
+                header = line
+                seq_parts = []
+            else:
+                seq_parts.append(line)
+    if header is not None:
+        yield header, "".join(seq_parts)
+
+
+def reverse_complement(seq):
+    return seq.translate(IUPAC_COMPLEMENT)[::-1]
+
+
+def base_matches(primer_base, target_base):
+    primer_set = IUPAC_BASES.get(primer_base.upper(), frozenset())
+    target_set = IUPAC_BASES.get(target_base.upper(), frozenset())
+    return bool(primer_set & target_set)
+
+
+def primer_window_mismatches(primer, sequence, start, max_mismatch):
+    mismatches = 0
+    for offset, primer_base in enumerate(primer):
+        target_base = sequence[start + offset]
+        if base_matches(primer_base, target_base):
+            continue
+        mismatches += 1
+        if mismatches > max_mismatch:
+            return mismatches
+    return mismatches
+
+
+def find_primer_sites(sequence, primer, max_mismatch):
+    primer = primer.upper()
+    sequence = sequence.upper()
+    k = len(primer)
+    for start in range(len(sequence) - k + 1):
+        if (
+            primer_window_mismatches(primer, sequence, start, max_mismatch)
+            <= max_mismatch
+        ):
+            yield start
+
+
+def amplicon_lengths_for_sequence(sequence, fwd, rev, mismatch, valid_lo, valid_hi):
+    rev_binding = reverse_complement(rev)
+    len_fwd = len(fwd)
+    len_rev = len(rev)
+    lengths = []
+    for strand in [sequence, reverse_complement(sequence)]:
+        fwd_sites = list(find_primer_sites(strand, fwd, mismatch))
+        rev_sites = list(find_primer_sites(strand, rev_binding, mismatch))
+        for fwd_start in fwd_sites:
+            lo = max(fwd_start + len_fwd, fwd_start + valid_lo - len_rev)
+            hi = fwd_start + valid_hi - len_rev
+            start = bisect_left(rev_sites, lo)
+            end = bisect_right(rev_sites, hi)
+            lengths.extend(
+                rev_start + len_rev - fwd_start for rev_start in rev_sites[start:end]
+            )
+    return lengths
+
+
 def parse_args():
-    parser = argparse.ArgumentParser(description="Validate primers with seqkit.")
+    parser = argparse.ArgumentParser(description="Validate primers in silico.")
     parser.add_argument("--primers-tsv", required=True)
     parser.add_argument("--genome-dir", required=True)
     parser.add_argument("--out-tsv", required=True)
@@ -65,7 +156,9 @@ def parse_args():
 
 def _required_param(name, value):
     if value is None:
-        raise SystemExit(f"missing --{name.replace('_', '-')} or config setting: {name}")
+        raise SystemExit(
+            f"missing --{name.replace('_', '-')} or config setting: {name}"
+        )
     return value
 
 
@@ -78,7 +171,9 @@ def main():
     configure_logging(args.log)
 
     cfg = load_config_file(args.config) if args.config else {}
-    mismatch = _required_param("pcr_mismatch", _param(args.mismatch, cfg, "pcr_mismatch"))
+    mismatch = _required_param(
+        "pcr_mismatch", _param(args.mismatch, cfg, "pcr_mismatch")
+    )
     amplicon_min_len = _required_param(
         "amplicon_min_len", _param(args.amplicon_min_len, cfg, "amplicon_min_len")
     )
@@ -100,7 +195,9 @@ def main():
         primer_rows = list(reader)
 
     if len(primer_rows) == 0:
-        log.warning("Primer TSV is empty - no primers to validate. Writing empty summary.")
+        log.warning(
+            "Primer TSV is empty - no primers to validate. Writing empty summary."
+        )
         write_summary([], args.out_tsv)
         return 0
 
@@ -119,73 +216,27 @@ def main():
         write_summary([], args.out_tsv)
         return 1
 
-    primer_file = None
-    try:
-        with tempfile.NamedTemporaryFile("w", suffix=".tsv", delete=False) as pf:
-            pf.write(f"{primer_id}\t{fwd}\t{rev}\n")
-            primer_file = pf.name
-        log.info("Wrote seqkit primer file: %s", primer_file)
+    amplified_genomes = 0
+    amplicon_lengths = []
 
-        amplified_genomes = 0
-        amplicon_lengths = []
-
-        for genome in genomes:
-            genome_id = os.path.basename(genome)
-            cmd = [
-                "seqkit",
-                "amplicon",
-                "-p",
-                primer_file,
-                "-m",
-                str(mismatch),
-                "--bed",
-                genome,
-            ]
-            try:
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-            except subprocess.CalledProcessError as exc:
-                log.warning(
-                    "  %s : seqkit failed (%s) - skipping",
-                    genome_id,
-                    exc.stderr.strip(),
+    for genome in genomes:
+        genome_id = os.path.basename(genome)
+        valid_here = []
+        for _, sequence in parse_fasta(genome):
+            valid_here.extend(
+                amplicon_lengths_for_sequence(
+                    sequence, fwd, rev, mismatch, valid_lo, valid_hi
                 )
-                continue
+            )
 
-            lines = [ln for ln in result.stdout.splitlines() if ln.strip()]
-            valid_here = []
-            for line in lines:
-                fields = line.split("\t")
-                if len(fields) < 3:
-                    continue
-                try:
-                    amp_len = int(fields[2]) - int(fields[1])
-                except ValueError:
-                    continue
-                if valid_lo <= amp_len <= valid_hi:
-                    valid_here.append(amp_len)
-
-            if valid_here:
-                amplified_genomes += 1
-                amplicon_lengths.extend(valid_here)
-                log.info(
-                    "  %s : amplified (%d valid product[s], %d raw)",
-                    genome_id,
-                    len(valid_here),
-                    len(lines),
-                )
-            elif lines:
-                log.info(
-                    "  %s : only spurious products (%d raw, none in %d-%d bp) - not counted",
-                    genome_id,
-                    len(lines),
-                    valid_lo,
-                    valid_hi,
-                )
-            else:
-                log.info("  %s : no amplification", genome_id)
-    finally:
-        if primer_file and os.path.exists(primer_file):
-            os.unlink(primer_file)
+        if valid_here:
+            amplified_genomes += 1
+            amplicon_lengths.extend(valid_here)
+            log.info(
+                "  %s : amplified (%d valid product[s])", genome_id, len(valid_here)
+            )
+        else:
+            log.info("  %s : no amplification", genome_id)
 
     rate = amplified_genomes / total_genomes if total_genomes else 0.0
     mean_len = sum(amplicon_lengths) / len(amplicon_lengths) if amplicon_lengths else 0

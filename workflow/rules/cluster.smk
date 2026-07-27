@@ -1,9 +1,9 @@
 # =============================================================================
 # cluster.smk
 #
-# Per-gene rule: dereplicates near-identical sequences using vsearch
-# cluster_fast at 97% identity, keeping one centroid per cluster.
-# This reduces redundancy before alignment and speeds up MUSCLE.
+# Per-gene rule: dereplicates near-identical sequences with a Python greedy
+# centroid clusterer at 97% identity, keeping one centroid per cluster.
+# This reduces redundancy before alignment.
 #
 # Input  : results/{genus}/extracted/{gene}.fasta            [temp, from extract_gene]
 # Output : results/{genus}/extracted/{gene}.centroids.fasta  [temp]

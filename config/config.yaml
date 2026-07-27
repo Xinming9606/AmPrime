@@ -89,6 +89,7 @@ max_3end_dg: -8.0
 # In silico PCR validation
 # -----------------------------------------------------------------------------
 
-# Mismatches allowed by seqkit amplicon. For a 20 bp primer, 3 mismatches is
-# about 15% tolerance and is useful for cross-species amplification.
+# Mismatches allowed per primer during Python in silico PCR. For a 20 bp
+# primer, 3 mismatches is about 15% tolerance and is useful for cross-species
+# amplification.
 pcr_mismatch: 3
