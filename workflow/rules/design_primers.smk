@@ -5,7 +5,7 @@
 # ranked primer-pair TSV and a diversity PNG with primer sites overlaid.
 #
 # Inputs  : results/{genus}/aligned/{gene}.aln
-# Outputs : results/{genus}/primers/{gene}_primers.tsv
+# Outputs : results/{genus}/primers/{gene}_primers_raw.tsv  [temp, feeds check_primers]
 #           results/{genus}/primers/{gene}_diversity.png
 # =============================================================================
 
@@ -14,7 +14,7 @@ rule design_primers:
     input:
         aln = str(RESULTS / "aligned" / "{gene}.aln")
     output:
-        tsv  = str(PRIMERS / "{gene}_primers.tsv"),
+        tsv  = temp(str(PRIMERS / "{gene}_primers_raw.tsv")),
         plot = str(PRIMERS / "{gene}_diversity.png")
     params:
         primer_len       = config["primer_len"],

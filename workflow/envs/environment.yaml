@@ -1,11 +1,3 @@
-# Single environment containing all pipeline dependencies.
-# Use this when --use-conda is unavailable (e.g., HPC clusters where conda
-# can't be installed). Install once, run the pipeline without --use-conda.
-#
-#   micromamba env create -f envs/all-in-one.yaml
-#   micromamba activate primer-pipeline
-#   snakemake --cores 4
-
 name: primer-pipeline
 channels:
   - conda-forge
@@ -17,6 +9,7 @@ dependencies:
   # taxid resolution + gene extraction
   - python=3.11
   - biopython
+  - primer3-py
 
   # genome download
   - ncbi-genome-download

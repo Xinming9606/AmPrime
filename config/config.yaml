@@ -56,6 +56,18 @@ div_cut: 2.0
 GC_tol: 0.1
 
 # -----------------------------------------------------------------------------
+# Primer quality filters — hairpin / dimer / 3'-end stability
+# Pairs where any ΔG falls below (more negative than) the threshold are dropped.
+# Set all to -99 to disable filtering.  More negative ΔG = stronger secondary
+# structure = worse.
+# -----------------------------------------------------------------------------
+
+max_hairpin_dg: 0.0         # kcal/mol; 0 = no hairpin tolerated
+max_homodimer_dg: -6.0      # kcal/mol; -6 = weak homodimer tolerated
+max_heterodimer_dg: -6.0    # kcal/mol; -6 = weak heterodimer tolerated
+max_3end_dg: -8.0           # kcal/mol; -8 = moderately stable 3' end tolerated
+
+# -----------------------------------------------------------------------------
 # In silico PCR validation
 # -----------------------------------------------------------------------------
 
