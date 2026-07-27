@@ -97,7 +97,7 @@ def _align_dg(seq_a: str, seq_b_rc: str) -> float:
 
     for offset in range(-(lb - 1), la):
         if offset >= 0:
-            a0, b0, n = offset, 0, min(la - offset, lb)
+            a0, _, n = offset, 0, min(la - offset, lb)
         else:
             a0, _, n = 0, -offset, min(la, lb + offset)
 

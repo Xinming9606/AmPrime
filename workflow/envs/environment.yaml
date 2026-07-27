@@ -6,22 +6,22 @@ dependencies:
   # pipeline runner
   - snakemake-minimal>=8
 
-  # taxid resolution + gene extraction
-  - python=3.11
+  # taxid resolution + gene extraction + primer design
+  - python=3.12
   - biopython
+  - numpy
+  - matplotlib-base
 
   # genome download
   - ncbi-genome-download
 
   # sequence tools
   - vsearch
-  - muscle=5
+  - muscle>=5
   - seqkit
 
   # R + reporting
   - r-base>=4.3
-  - r-seqinr
-  - r-zoo
   - r-knitr
   - r-rmarkdown
   - r-kableextra

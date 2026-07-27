@@ -61,6 +61,14 @@ div_cut_per_gene: {}
 # Maximum allowed GC% difference between the two primers in a pair
 GC_tol: 0.1
 
+# Minimum allele frequency for a base to be included in the degenerate (IUPAC)
+# primer code.  Lower = more degenerate positions.
+min_allele_freq: 0.05
+
+# Maximum allowed degeneracy fold per primer.  A fold of 16 means, e.g.,
+# up to 4 degenerate 2-way positions or 2 degenerate 4-way positions.
+max_degeneracy: 16
+
 # -----------------------------------------------------------------------------
 # Primer quality filters — hairpin / dimer / 3'-end stability
 # Pairs where any ΔG falls below (more negative than) the threshold are dropped.
