@@ -3,9 +3,10 @@
 > Design and validate amplicon-sequencing primers for **any bacterial genus**
 > and **any set of housekeeping genes** — straight from public NCBI genomes.
 
-A reproducible [Snakemake](https://snakemake.github.io/) workflow that turns a
-genus name and a list of genes into ranked, in-silico-validated primer pairs,
-each with a self-contained HTML report.
+A reproducible primer-design pipeline that turns a genus name and a list of
+genes into ranked, in-silico-validated primer pairs, each with a self-contained
+HTML report. Snakemake is used as a thin scheduler; the per-step Python scripts
+are ordinary command-line tools.
 
 ## How it works
 
@@ -47,7 +48,7 @@ cd AmPrime
 
 # 2. Create the environment (one env, all tools)
 micromamba env create -f workflow/envs/environment.yaml
-micromamba activate AmPrime
+micromamba activate primer-pipeline
 
 # 3. Edit config/config.yaml — set your genus and genes
 
@@ -118,9 +119,10 @@ AmPrime/
 |   |   |-- design_primers.smk
 |   |   |-- in_silico_pcr.smk
 |   |   `-- reports.smk
-|   |-- scripts/                 # the logic each rule calls
+|   |-- scripts/                 # standalone CLIs called by the rules
 |   |   |-- extract_gene.py
 |   |   |-- design_primers.py
+|   |   |-- check_primers.py
 |   |   |-- in_silico_pcr.py
 |   |   |-- gene_report.py
 |   |   `-- gene_report.html

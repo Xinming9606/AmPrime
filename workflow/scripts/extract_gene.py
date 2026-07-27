@@ -29,7 +29,7 @@ def parse_fasta(filepath):
     """Yield (header, sequence) tuples from a FASTA file."""
     header = None
     seq_parts = []
-    with open(filepath, encoding="utf-8") as fh:
+    with open(filepath, encoding="utf-8-sig") as fh:
         for line in fh:
             line = line.rstrip()
             if line.startswith(">"):
