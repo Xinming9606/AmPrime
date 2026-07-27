@@ -26,9 +26,6 @@
 import logging
 import os
 import re
-import sys
-
-import snakemake
 
 # ---------------------------------------------------------------------------
 # Logging setup
@@ -168,12 +165,11 @@ else:
 log.info("Total sequences extracted: %d", len(results))
 
 if len(results) == 0:
-    log.error(
+    log.warning(
         "No sequences found for gene '%s' in any genome. "
-        "Check gene name, aliases, or try a less stringent assembly_level.",
+        "Writing an empty FASTA so downstream report generation can continue.",
         gene,
     )
-    sys.exit(1)
 
 # Write output FASTA
 os.makedirs(os.path.dirname(out_fasta), exist_ok=True)

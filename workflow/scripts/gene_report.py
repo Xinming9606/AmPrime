@@ -14,7 +14,6 @@ from datetime import datetime
 from html import escape
 
 import markdown
-import snakemake
 
 # =============================================================================
 # HTML page shell - loaded from separate .html file

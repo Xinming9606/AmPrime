@@ -30,11 +30,9 @@
 import csv
 import logging
 import os
-import sys
 
 import matplotlib.pyplot as plt
 import numpy as np
-import snakemake
 from Bio import AlignIO
 
 # ---------------------------------------------------------------------------
@@ -244,12 +242,25 @@ def _write_empty_tsv(path):
     _write_tsv([], path)
 
 
+def _plot_placeholder(message, aln_file, out_plot, log):
+    os.makedirs(os.path.dirname(out_plot), exist_ok=True)
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.text(0.5, 0.5, message, ha="center", va="center", wrap=True)
+    ax.set_axis_off()
+    ax.set_title(f"Sequence diversity - {os.path.basename(aln_file)}")
+    fig.tight_layout()
+    fig.savefig(out_plot, dpi=150)
+    plt.close(fig)
+    log.info("Wrote placeholder diversity plot to %s", out_plot)
+
+
 # ---------------------------------------------------------------------------
 # Plot
 # ---------------------------------------------------------------------------
 def _plot_diversity(
     divs, roll_means, roll_k, results, top_n, primer_len, aln_file, out_plot, log
 ):
+    os.makedirs(os.path.dirname(out_plot), exist_ok=True)
     fig, ax = plt.subplots(figsize=(12, 6))
 
     ax.scatter(
@@ -289,10 +300,12 @@ def _plot_diversity(
     from matplotlib.patches import Patch
 
     handles, _ = ax.get_legend_handles_labels()
-    handles.append(
-        Patch(facecolor="#e34a33", alpha=0.20, label=f"Top {top_n} primer sites")
-    )
-    ax.legend(handles=handles, loc="upper right")
+    if top_n > 0:
+        handles.append(
+            Patch(facecolor="#e34a33", alpha=0.20, label=f"Top {top_n} primer sites")
+        )
+    if handles:
+        ax.legend(handles=handles, loc="upper right")
 
     ax.set_title(f"Sequence diversity — {os.path.basename(aln_file)}")
     ax.set_xlabel("Alignment position (bp)")
@@ -348,15 +361,21 @@ def main():
         log.info("  %-18s = %s", k, v)
 
     # --- 1. Load alignment ------------------------------------------------
-    aln = AlignIO.read(aln_file, "fasta")
-    dna_matrix = np.array([list(str(rec.seq).lower()) for rec in aln])
+    records = list(AlignIO.parse(aln_file, "fasta"))
+    if len(records) < 2:
+        msg = (
+            f"Need at least 2 sequences to estimate diversity; "
+            f"found {len(records)}."
+        )
+        log.warning(msg)
+        _write_empty_tsv(out_tsv)
+        _plot_placeholder(msg, aln_file, out_plot, log)
+        return
+
+    dna_matrix = np.array([list(str(rec.seq).lower()) for rec in records])
     n_seqs, aln_len = dna_matrix.shape
 
     log.info("Loaded %d sequences, alignment length %d bp", n_seqs, aln_len)
-    if n_seqs < 2:
-        log.error("Need ≥ 2 sequences; only %d found.", n_seqs)
-        sys.exit(1)
-
     # --- 2. Per-position Shannon entropy ----------------------------------
     consensus = _consensus(dna_matrix)
     divs = np.array([_shannon(dna_matrix[:, i], n_seqs) for i in range(aln_len)])
@@ -376,8 +395,20 @@ def main():
 
     # --- 5. Build kmer table ----------------------------------------------
     if aln_len < primer_len:
-        log.error("Alignment (%d bp) < primer_len (%d bp).", aln_len, primer_len)
-        sys.exit(1)
+        log.warning("Alignment (%d bp) < primer_len (%d bp). Empty TSV.", aln_len, primer_len)
+        _write_empty_tsv(out_tsv)
+        _plot_diversity(
+            divs,
+            roll_means,
+            roll_k,
+            [],
+            0,
+            primer_len,
+            aln_file,
+            out_plot,
+            log,
+        )
+        return
 
     kmers = _build_kmers(consensus, pos_code, pos_fold, divs, primer_len)
 
@@ -393,6 +424,17 @@ def main():
             max_degeneracy,
         )
         _write_empty_tsv(out_tsv)
+        _plot_diversity(
+            divs,
+            roll_means,
+            roll_k,
+            [],
+            0,
+            primer_len,
+            aln_file,
+            out_plot,
+            log,
+        )
         return
 
     log.info("%d candidate kmers pass filters", len(candidates))
@@ -403,6 +445,17 @@ def main():
     if not results:
         log.info("No valid primer pairs found. Empty TSV.")
         _write_empty_tsv(out_tsv)
+        _plot_diversity(
+            divs,
+            roll_means,
+            roll_k,
+            [],
+            0,
+            primer_len,
+            aln_file,
+            out_plot,
+            log,
+        )
         return
 
     # --- 8. Write TSV -----------------------------------------------------

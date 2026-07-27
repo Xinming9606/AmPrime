@@ -23,8 +23,6 @@ import csv
 import logging
 import os
 
-import snakemake
-
 # ---------------------------------------------------------------------------
 # SantaLucia 1998 unified nearest-neighbour ΔG (kcal/mol, 37 °C, 1 M NaCl)
 # ---------------------------------------------------------------------------
