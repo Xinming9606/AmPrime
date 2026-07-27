@@ -159,7 +159,7 @@ def _compute_position_annotations(
 
 def _build_kmers(consensus, pos_code, pos_fold, divs, primer_len):
     """Slide a window of length *primer_len* across the alignment."""
-    n_kmers = len(divs) - primer_len
+    n_kmers = len(divs) - primer_len + 1
     kmers = []
     for j in range(n_kmers):
         idx = slice(j, j + primer_len)
