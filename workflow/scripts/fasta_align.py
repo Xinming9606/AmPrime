@@ -70,6 +70,7 @@ def write_alignment_metadata(path, row):
 
 
 def run_muscle(executable, input_path, output_path, threads):
+    """Run MUSCLE and return ``(succeeded, used_legacy_syntax)``."""
     output_tmp = Path(output_path).with_suffix(Path(output_path).suffix + ".tmp")
     commands = [
         [
@@ -91,7 +92,7 @@ def run_muscle(executable, input_path, output_path, threads):
             str(threads),
         ],
     ]
-    for command in commands:
+    for command_index, command in enumerate(commands):
         if output_tmp.exists():
             output_tmp.unlink()
         log.info("Running MUSCLE: %s", " ".join(str(part) for part in command))
@@ -111,11 +112,11 @@ def run_muscle(executable, input_path, output_path, threads):
             and output_tmp.stat().st_size
         ):
             os.replace(output_tmp, output_path)
-            return True
+            return True, command_index == 1
 
     if output_tmp.exists():
         output_tmp.unlink()
-    return False
+    return False, False
 
 
 def parse_args():
@@ -179,7 +180,10 @@ def main():
     if n_in > WARN_ALIGNMENT_SEQUENCE_COUNT or total_bp > WARN_ALIGNMENT_BP:
         log.info("Large alignment input; using MUSCLE")
 
-    if not run_muscle(executable, args.input, args.output, args.threads):
+    alignment_ok, fallback_used = run_muscle(
+        executable, args.input, args.output, args.threads
+    )
+    if not alignment_ok:
         raise SystemExit("MUSCLE alignment failed; see log for command output")
 
     n_out = count_fasta_records(args.output)
@@ -189,7 +193,7 @@ def main():
         {
             "requested_backend": "muscle",
             "backend_used": "muscle",
-            "fallback_used": False,
+            "fallback_used": fallback_used,
             "backend_executable": executable,
             "backend_version": _backend_version(executable),
             "n_input_sequences": n_in,

@@ -31,6 +31,7 @@ from fasta_io import parse_fasta
 log = logging.getLogger(__name__)
 WARN_GENOME_COUNT = 500
 WARN_TOTAL_GENOME_BP = 500_000_000
+DEFAULT_BATCH_SIZE = 64
 OUT_COLS = [
     "validation_rank",
     "input_rank",
@@ -73,14 +74,18 @@ def _species_from_header(header, fallback):
     return fallback
 
 
-def _write_seqkit_primer_file(path, candidates):
-    """Write SeqKit's three-column primer-pair input file."""
+def _write_seqkit_pattern_file(path, candidates):
+    """Write forward and reverse-binding patterns for SeqKit locate."""
+    pattern_map = {}
     with open(path, "w", newline="", encoding="utf-8") as fh:
-        writer = csv.writer(fh, delimiter="\t", lineterminator="\n")
-        writer.writerows(
-            (candidate["primer_id"], candidate["fwd"], candidate["rev"])
-            for candidate in candidates
-        )
+        for index, candidate in enumerate(candidates):
+            forward_id = f"p{index}f"
+            reverse_id = f"p{index}r"
+            fh.write(f">{forward_id}\n{candidate['fwd'].upper()}\n")
+            fh.write(f">{reverse_id}\n{reverse_complement(candidate['rev'].upper())}\n")
+            pattern_map[forward_id] = (index, True)
+            pattern_map[reverse_id] = (index, False)
+    return pattern_map
 
 
 def _write_species_outputs(summary_path, species_path, candidate, total_genomes):
@@ -160,6 +165,12 @@ def parse_args():
     parser.add_argument(
         "--workers", type=int, default=1, help="Genome-scanning worker processes."
     )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help="Number of genomes handled by one SeqKit invocation.",
+    )
     parser.add_argument("--species-summary")
     parser.add_argument("--species-tsv")
     parser.add_argument("--log", required=True)
@@ -221,76 +232,142 @@ def _summarize_candidates(candidates, total_genomes):
     return rows
 
 
-def _scan_genome(task):
-    """Run SeqKit once for one genome and return all candidate observations."""
-    executable, genome, primer_file, candidate_ids, mismatch, valid_lo, valid_hi = task
-    genome_bp = 0
-    genome_contigs = 0
-    per_candidate_hits = [[] for _ in candidate_ids]
-    per_candidate_species = [{} for _ in candidate_ids]
-    genome_species = set()
-    record_species = {}
-    for header, sequence in parse_fasta(genome):
-        species = _species_from_header(header, os.path.basename(genome))
-        genome_species.add(species)
-        record_id = header.lstrip(">\ufeff").split(maxsplit=1)[0]
-        record_species[record_id] = species
-        genome_bp += len(sequence)
-        genome_contigs += 1
-    command = [
-        executable,
-        "amplicon",
-        "--primer-file",
-        primer_file,
-        "--max-mismatch",
-        str(mismatch),
-        "--bed",
-        "--threads",
-        "1",
-        "--quiet",
-        genome,
-    ]
-    completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
-        command,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+def _scan_genome_batch(task):
+    """Locate all primer sites in a temporary, uniquely keyed FASTA batch."""
+    executable, genomes, pattern_file, pattern_map, mismatch, valid_lo, valid_hi = task
+    record_data = {}
+    genome_data = {}
+    with TemporaryDirectory(prefix="amprime-seqkit-batch-") as temp_dir:
+        merged_fasta = Path(temp_dir) / "genomes.fna"
+        with merged_fasta.open("w", encoding="utf-8") as merged:
+            for genome_index, genome in enumerate(genomes):
+                genome_id = os.path.basename(genome)
+                genome_bp = 0
+                genome_contigs = 0
+                genome_species = set()
+                for record_index, (header, sequence) in enumerate(parse_fasta(genome)):
+                    species = _species_from_header(header, genome_id)
+                    record_id = f"g{genome_index}_r{record_index}"
+                    sequence = sequence.upper()
+                    record_data[record_id] = (genome_id, species, sequence)
+                    genome_bp += len(sequence)
+                    genome_contigs += 1
+                    genome_species.add(species)
+                    merged.write(f">{record_id}\n{sequence}\n")
+                genome_data[genome_id] = (genome_bp, genome_contigs, genome_species)
+
+        command = [
+            executable,
+            "locate",
+            "--pattern-file",
+            pattern_file,
+            "--max-mismatch",
+            str(mismatch),
+            "--degenerate",
+            "--bed",
+            "--threads",
+            "1",
+            "--quiet",
+            str(merged_fasta),
+        ]
+        completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
     if completed.returncode != 0:
         details = (completed.stderr or completed.stdout).strip()
         raise RuntimeError(
-            f"SeqKit amplicon failed for {genome} with exit code "
-            f"{completed.returncode}: {details}"
+            f"SeqKit locate failed for batch starting with {genomes[0]} "
+            f"with exit code {completed.returncode}: {details}"
         )
 
-    candidate_index = {primer_id: idx for idx, primer_id in enumerate(candidate_ids)}
+    hits = {}
+    skipped_lines = 0
     for line in completed.stdout.splitlines():
-        fields = line.split("\t", 6)
-        if len(fields) < 7:
+        if not line.strip():
             continue
-        record_id, start, end, primer_id, _, _, amplicon = fields
-        idx = candidate_index.get(primer_id)
-        if idx is None:
+        fields = line.split("\t")
+        if len(fields) < 6:
+            skipped_lines += 1
+            continue
+        record_id, start, end, pattern_id, _, strand = fields[:6]
+        if record_id not in record_data or pattern_id not in pattern_map:
+            skipped_lines += 1
             continue
         try:
-            length = int(end) - int(start)
+            start_value = int(start)
+            end_value = int(end)
         except ValueError:
+            skipped_lines += 1
             continue
-        if not valid_lo <= length <= valid_hi:
+        if strand not in {"+", "-"} or start_value < 0 or end_value <= start_value:
+            skipped_lines += 1
             continue
-        species = record_species.get(record_id, os.path.basename(genome))
-        per_candidate_hits[idx].append(length)
-        per_candidate_species[idx].setdefault(species, set()).add(
-            _canonical_sequence(amplicon)
+        sequence_length = len(record_data[record_id][2])
+        if end_value > sequence_length:
+            skipped_lines += 1
+            continue
+        hits.setdefault(record_id, {}).setdefault(
+            (*pattern_map[pattern_id], strand), []
+        ).append((start_value, end_value))
+
+    results = []
+    n_candidates = max(index for index, _ in pattern_map.values()) + 1
+    for genome_id, (genome_bp, genome_contigs, genome_species) in genome_data.items():
+        per_candidate_hits = [[] for _ in range(n_candidates)]
+        per_candidate_species = [{} for _ in range(n_candidates)]
+        for record_id, (record_genome, species, sequence) in record_data.items():
+            if record_genome != genome_id:
+                continue
+            record_hits = hits.get(record_id, {})
+            for candidate_index in range(n_candidates):
+                lengths = []
+                alleles = []
+                for strand in ("+", "-"):
+                    forward_hits = record_hits.get((candidate_index, True, strand), [])
+                    reverse_hits = record_hits.get((candidate_index, False, strand), [])
+                    for forward_start, forward_end in forward_hits:
+                        for reverse_start, reverse_end in reverse_hits:
+                            if strand == "+":
+                                if reverse_start < forward_end:
+                                    continue
+                                length = reverse_end - forward_start
+                                amplicon = sequence[forward_start:reverse_end]
+                            else:
+                                if forward_start < reverse_end:
+                                    continue
+                                length = forward_end - reverse_start
+                                amplicon = reverse_complement(
+                                    sequence[reverse_start:forward_end]
+                                )
+                            if not valid_lo <= length <= valid_hi:
+                                continue
+                            lengths.append(length)
+                            alleles.append(_canonical_sequence(amplicon))
+                if lengths:
+                    per_candidate_hits[candidate_index].extend(lengths)
+                    per_candidate_species[candidate_index].setdefault(
+                        species, set()
+                    ).update(alleles)
+        results.append(
+            (
+                genome_id,
+                genome_bp,
+                genome_contigs,
+                per_candidate_hits,
+                per_candidate_species,
+                genome_species,
+            )
         )
-    return (
-        os.path.basename(genome),
-        genome_bp,
-        genome_contigs,
-        per_candidate_hits,
-        per_candidate_species,
-        genome_species,
-    )
+    return results, skipped_lines
+
+
+def _record_batch_results(batch_result, candidates):
+    scan_results, skipped_lines = batch_result
+    totals = [_record_genome_result(result, candidates) for result in scan_results]
+    return totals, skipped_lines
 
 
 def _record_genome_result(scan_result, candidates):
@@ -355,6 +432,8 @@ def main():
         raise SystemExit("pcr_top_n must be a positive integer")
     if args.workers < 1:
         raise SystemExit("workers must be a positive integer")
+    if args.batch_size < 1:
+        raise SystemExit("batch-size must be a positive integer")
 
     len_margin = 100
     valid_lo = max(0, amplicon_min_len - len_margin)
@@ -366,6 +445,7 @@ def main():
     log.info("Mismatch    : %d", mismatch)
     log.info("Top N       : %d", top_n)
     log.info("Workers     : %d", args.workers)
+    log.info("Batch size  : %d", args.batch_size)
 
     with open(args.primers_tsv, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -401,34 +481,48 @@ def main():
         return 1
 
     executable = ensure_tool("seqkit")
-    candidate_ids = [candidate["primer_id"] for candidate in candidates]
-    workers = min(args.workers, total_genomes)
-    log.info("Scanning genomes with %d worker process(es)", workers)
+    workers = min(
+        args.workers, (total_genomes + args.batch_size - 1) // args.batch_size
+    )
+    log.info("Scanning genomes in batches with %d worker process(es)", workers)
     with TemporaryDirectory(prefix="amprime-seqkit-") as temp_dir:
-        primer_file = str(Path(temp_dir) / "primers.tsv")
-        _write_seqkit_primer_file(primer_file, candidates)
+        pattern_file = str(Path(temp_dir) / "patterns.fasta")
+        pattern_map = _write_seqkit_pattern_file(pattern_file, candidates)
+        genome_batches = [
+            genomes[start : start + args.batch_size]
+            for start in range(0, total_genomes, args.batch_size)
+        ]
         tasks = [
             (
                 executable,
-                genome,
-                primer_file,
-                candidate_ids,
+                batch,
+                pattern_file,
+                pattern_map,
                 mismatch,
                 valid_lo,
                 valid_hi,
             )
-            for genome in genomes
+            for batch in genome_batches
         ]
         if workers > 1:
             with ProcessPoolExecutor(max_workers=workers) as executor:
-                scan_results = executor.map(_scan_genome, tasks)
-                totals = [
-                    _record_genome_result(result, candidates) for result in scan_results
+                batch_results = executor.map(_scan_genome_batch, tasks)
+                collected = [
+                    _record_batch_results(result, candidates)
+                    for result in batch_results
                 ]
         else:
-            totals = [
-                _record_genome_result(_scan_genome(task), candidates) for task in tasks
+            collected = [
+                _record_batch_results(_scan_genome_batch(task), candidates)
+                for task in tasks
             ]
+    totals = [total for batch_totals, _ in collected for total in batch_totals]
+    skipped_lines = sum(skipped for _, skipped in collected)
+    if skipped_lines:
+        log.warning(
+            "SeqKit locate skipped %d malformed or unknown output line(s)",
+            skipped_lines,
+        )
 
     total_bp_scanned = sum(bp for bp, _ in totals)
     total_contigs = sum(contigs for _, contigs in totals)

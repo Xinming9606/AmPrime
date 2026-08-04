@@ -287,6 +287,7 @@ def check_sequence_cli_steps():
             metadata_rows = list(csv.DictReader(fh, delimiter="\t"))
         assert metadata_rows[0]["requested_backend"] == "muscle"
         assert metadata_rows[0]["backend_used"] == "muscle"
+        assert metadata_rows[0]["fallback_used"] == "False"
     print("cluster and align cli ok")
 
 
@@ -308,10 +309,11 @@ def check_in_silico_pcr_cli():
             encoding="utf-8",
         )
         (genome_dir / "genome.fna").write_text(
-            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
+            ">contig1 [organism=Test species]\nATGCGGGGACGCNNATGCGGGGGGGACGC\n",
+            encoding="utf-8",
         )
         (genome_dir / "genome2.fna").write_text(
-            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
+            ">contig1 [organism=Test species]\nGCGTGGGGGCAT\n", encoding="utf-8"
         )
         subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
@@ -335,6 +337,8 @@ def check_in_silico_pcr_cli():
                 "2",
                 "--workers",
                 "2",
+                "--batch-size",
+                "1",
                 "--species-summary",
                 str(species_summary),
                 "--species-tsv",
@@ -357,6 +361,8 @@ def check_in_silico_pcr_cli():
             }
         assert metrics["amplified_genomes"] == "2"
         assert metrics["amplified_species"] == "1"
+        assert metrics["multi_allele_genomes"] == "1"
+        assert int(metrics["unique_amplicon_alleles"]) >= 2
         with species_tsv.open(encoding="utf-8") as fh:
             species_rows = list(csv.DictReader(fh, delimiter="\t"))
         assert species_rows[0]["species"] == "Test species"

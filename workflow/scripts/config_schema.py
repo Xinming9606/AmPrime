@@ -26,6 +26,7 @@ DEFAULT_SETTINGS = {
     "div_cut_per_gene": {},
     "min_allele_freq": 0.05,
     "max_degeneracy": 16,
+    "max_primer_pairs": 100_000,
     "pcr_top_n": 10,
     "max_hairpin_dg": 0.0,
     "max_homodimer_dg": -6.0,
@@ -121,6 +122,10 @@ def validate_config(cfg):
     max_degeneracy = cfg.get("max_degeneracy", 16)
     if not _is_int(max_degeneracy) or max_degeneracy < 1:
         errors.append("max_degeneracy must be a positive integer")
+
+    max_primer_pairs = cfg.get("max_primer_pairs", 100_000)
+    if not _is_int(max_primer_pairs) or max_primer_pairs < 1:
+        errors.append("max_primer_pairs must be a positive integer")
 
     if not _is_int(cfg.get("pcr_mismatch")) or cfg.get("pcr_mismatch") < 0:
         errors.append("pcr_mismatch must be a non-negative integer")
