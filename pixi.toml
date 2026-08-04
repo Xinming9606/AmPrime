@@ -38,24 +38,26 @@ metadata-check = "python tools/check_metadata.py"
 lint = "ruff check workflow/scripts tools amprime"
 format-check = "ruff format --check workflow/scripts tools amprime"
 pyrefly-check = "pyrefly check"
-smoke = "python tools/smoke_project.py"
+ensure-dependencies = "python workflow/scripts/dependencies.py"
+smoke = { cmd = "python tools/smoke_project.py", depends-on = ["ensure-dependencies"] }
 dry-run = "snakemake --snakefile Snakefile -n all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources"
-pipeline = "snakemake --snakefile Snakefile --cores 4 all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources"
+pipeline = { cmd = "snakemake --snakefile Snakefile --cores 4 all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources", depends-on = ["ensure-dependencies"] }
 ci = { depends-on = [
   "compile",
   "metadata-check",
   "lint",
   "format-check",
   "pyrefly-check",
+  "ensure-dependencies",
   "smoke",
   "dry-run",
   "verify-ci-test-data",
   "functional-test-ci"
 ] }
-functional-test = "python -m amprime functional-test"
+functional-test = { cmd = "python -m amprime functional-test", depends-on = ["ensure-dependencies"] }
 download-ci-test-data = "python tools/download_test_dataset.py --output data/borrelia-genomes.tar.gz"
 verify-ci-test-data = "python tools/verify_test_dataset.py --archive data/borrelia-genomes.tar.gz"
-functional-test-ci = "python -m amprime functional-test --archive data/borrelia-genomes.tar.gz"
+functional-test-ci = { cmd = "python -m amprime functional-test --archive data/borrelia-genomes.tar.gz", depends-on = ["ensure-dependencies"] }
 source-archive = "python tools/package_release.py"
 conda-build = "pixi publish --path . --target-dir dist/conda --force"
 conda-install-test = "python tools/test_built_package.py"

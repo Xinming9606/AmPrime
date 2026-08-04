@@ -10,68 +10,18 @@
 import argparse
 import logging
 import os
-import shutil
 import subprocess
 import sys
 from time import perf_counter
 
 from common import configure_logging
+from dependencies import ensure_tool
 from fasta_io import count_fasta_records, parse_fasta
 
 log = logging.getLogger(__name__)
 
 WARN_SEQUENCE_COUNT = 1000
 WARN_CENTROID_COUNT = 500
-
-
-def _log_process_output(completed):
-    if completed.stdout:
-        log.info(completed.stdout.rstrip())
-    if completed.stderr:
-        log.info(completed.stderr.rstrip())
-
-
-def ensure_vsearch():
-    """Return VSEARCH, installing it with Scoop on Windows when possible."""
-    executable = shutil.which("vsearch")
-    if executable:
-        return executable
-
-    if os.name != "nt":
-        raise RuntimeError(
-            "VSEARCH is required but was not found on PATH. Install it with "
-            "Pixi/Conda and retry."
-        )
-
-    scoop = shutil.which("scoop")
-    if not scoop:
-        raise RuntimeError(
-            "VSEARCH is required on Windows, but Scoop was not found. "
-            "Install Scoop, then run 'scoop install vsearch'. See the "
-            "Windows VSEARCH section in README.md."
-        )
-
-    log.info("VSEARCH not found; installing it with Scoop")
-    completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
-        [scoop, "install", "vsearch"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    _log_process_output(completed)
-    if completed.returncode != 0:
-        raise RuntimeError(
-            f"Scoop failed to install VSEARCH with exit code {completed.returncode}. "
-            "Run 'scoop install vsearch' manually and retry."
-        )
-
-    executable = shutil.which("vsearch")
-    if not executable:
-        raise RuntimeError(
-            "Scoop reported a successful VSEARCH installation, but vsearch was "
-            "not found on PATH. Restart the shell and retry."
-        )
-    return executable
 
 
 def cluster_with_vsearch(executable, input_path, output_path, identity):
@@ -95,7 +45,10 @@ def cluster_with_vsearch(executable, input_path, output_path, identity):
         text=True,
         check=False,
     )
-    _log_process_output(completed)
+    if completed.stdout:
+        log.info(completed.stdout.rstrip())
+    if completed.stderr:
+        log.info(completed.stderr.rstrip())
     if completed.returncode != 0:
         raise RuntimeError(
             f"VSEARCH clustering failed with exit code {completed.returncode}"
@@ -119,7 +72,7 @@ def main():
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
     started = perf_counter()
-    executable = ensure_vsearch()
+    executable = ensure_tool("vsearch")
     n_in = 0
     total_bp = 0
     for _, seq in parse_fasta(args.input):

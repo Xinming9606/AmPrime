@@ -221,6 +221,7 @@ AmPrime/
 |   |   |-- gene_report_cross.py
 |   |   |-- gene_report_cross.html
 |   |   |-- report.css
+|   |   |-- dependencies.py
 |   |   |-- common.py
 |   |   |-- fasta_io.py
 |   |   `-- gene_report.html
@@ -231,7 +232,7 @@ AmPrime/
 
 ## Design Notes
 
-Snakemake is intentionally kept as a thin scheduler. It manages dependencies, parallel execution, logs, benchmarks, and resumability. The actual work is done by standalone Python command-line tools in `workflow/scripts/`.
+Snakemake is intentionally kept as a thin scheduler. It manages dependencies, parallel execution, logs, benchmarks, and resumability. The actual work is done by standalone Python command-line tools in `workflow/scripts/`. The shared `dependencies.py` module detects VSEARCH and MUSCLE and installs missing Windows tools through Scoop.
 
 Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Clustering always uses VSEARCH at 97% identity, and representative sequences are aligned with MUSCLE. Alignment runs write a small metadata TSV next to the alignment, recording the MUSCLE executable and version. The same alignment summary is included in each HTML report so runs remain easy to audit.
 
@@ -257,6 +258,7 @@ pixi run metadata-check
 pixi run lint
 pixi run format-check
 pixi run pyrefly-check
+pixi run ensure-dependencies
 pixi run smoke
 pixi run dry-run
 pixi run pipeline
