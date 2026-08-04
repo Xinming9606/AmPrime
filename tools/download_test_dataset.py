@@ -83,7 +83,12 @@ def download_archive(output: Path, genus: str, config: Path) -> None:
     if partial_output.exists():
         partial_output.unlink()
 
-    with tempfile.TemporaryDirectory(prefix="amprime-test-data-") as temp_dir:
+    # Keep downloader paths on the same filesystem as the checkout. On
+    # Windows, ncbi-genome-download computes relative paths internally and
+    # fails when the system temp directory is on another drive.
+    with tempfile.TemporaryDirectory(
+        prefix=".amprime-test-data-", dir=ROOT
+    ) as temp_dir:
         root = Path(temp_dir)
         genomes = root / "genomes"
         log_path = root / "download.log"
@@ -171,9 +176,10 @@ def _assembly_level(config: Path) -> str:
 
 
 def _format_returncode(returncode: int) -> str:
-    """Make Windows' unsigned representation of ``-1`` diagnosable."""
-    if returncode == 0xFFFFFFFF:
-        return "-1 (Windows 0xFFFFFFFF)"
+    """Make Windows' unsigned representation of negative exits diagnosable."""
+    if returncode >= 0x80000000:
+        signed = returncode - 0x100000000
+        return f"{signed} (Windows 0x{returncode:08X})"
     return str(returncode)
 
 
