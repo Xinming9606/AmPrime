@@ -27,8 +27,8 @@ metadata-check = "python tools/check_metadata.py"
 lint = "ruff check workflow/scripts tools amprime"
 format-check = "ruff format --check workflow/scripts tools amprime"
 smoke = "python tools/smoke_project.py"
-dry-run = "snakemake -n"
-pipeline = "snakemake --cores 4"
+dry-run = "snakemake -n --shared-fs-usage input-output persistence software-deployment sources"
+pipeline = "snakemake --cores 4 --shared-fs-usage input-output persistence software-deployment sources"
 ci = { depends-on = [
   "compile",
   "metadata-check",

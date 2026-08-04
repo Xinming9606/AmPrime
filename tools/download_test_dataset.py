@@ -18,6 +18,12 @@ DEFAULT_OUTPUT = ROOT / "data" / "borrelia-genomes.tar.gz"
 
 
 def download_archive(output: Path, genus: str, config: Path) -> None:
+    if not DOWNLOAD_SCRIPT.is_file():
+        raise FileNotFoundError(
+            f"Genome downloader script not found: {DOWNLOAD_SCRIPT}. "
+            "Check out the current repository revision before running CI."
+        )
+
     output.parent.mkdir(parents=True, exist_ok=True)
     partial_output = output.with_name(output.name + ".partial")
     if partial_output.exists():
@@ -47,10 +53,13 @@ def download_archive(output: Path, genus: str, config: Path) -> None:
         ]
         try:
             subprocess.run(command, cwd=ROOT, check=True, env=_project_env())
-        except subprocess.CalledProcessError:
+        except subprocess.CalledProcessError as exc:
             if log_path.is_file():
                 print(log_path.read_text(encoding="utf-8"), file=sys.stderr)
-            raise
+            raise RuntimeError(
+                f"Genome test-data download failed with exit code {exc.returncode}. "
+                "The downloader log was printed above."
+            ) from exc
 
         with tarfile.open(partial_output, "w:gz") as archive:
             archive.add(genomes, arcname="genomes")

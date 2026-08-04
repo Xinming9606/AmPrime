@@ -251,6 +251,16 @@ class AmPrimeProject:
                 command.append("--rerun-incomplete")
         if extra_args:
             command.extend(extra_args)
+        command.extend(
+            [
+                "--shared-fs-usage",
+                "input-output",
+                "persistence",
+                "software-deployment",
+                "sources",
+                "--",
+            ]
+        )
         snakemake_target = _as_snakemake_target(target, self.root)
         if snakemake_target is not None:
             command.append(snakemake_target)

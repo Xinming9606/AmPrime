@@ -26,7 +26,12 @@ log = logging.getLogger(__name__)
 def run_download(genus, assembly_level, fmt, out_dir):
     Path(out_dir).mkdir(parents=True, exist_ok=True)
     cmd = [
-        "ncbi-genome-download",
+        # Invoke the package through the active Python environment.  This is
+        # reliable on Windows, where the generated console-script name and
+        # PATH resolution differ from Unix.
+        sys.executable,
+        "-m",
+        "ncbi_genome_download",
         "bacteria",
         "--genera",
         genus,
@@ -40,7 +45,7 @@ def run_download(genus, assembly_level, fmt, out_dir):
         "--retries",
         "3",
     ]
-    log.info("Running: %s", " ".join(cmd))
+    log.info("Running: %s", subprocess.list2cmdline(cmd))
     result = subprocess.run(  # noqa: S603 - fixed downloader with shell=False.
         cmd, capture_output=True, text=True
     )

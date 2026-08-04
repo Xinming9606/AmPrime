@@ -140,8 +140,7 @@ def check_batch_gene_extraction():
         (rna / "genes.fna").write_text(">other [gene=other]\nAAAA\n", encoding="utf-8")
 
         results = gene_extract.scan_fasta_dirs(
-            [("CDS", cds), ("RNA", rna)],
-            {"recG": {"recg"}, "tuf": {"tuf"}},
+            [("CDS", cds), ("RNA", rna)], {"recG": {"recg"}, "tuf": {"tuf"}}
         )
         assert [seq for _, seq in results["recG"]] == ["ACGT"]
         assert [seq for _, seq in results["tuf"]] == ["TGCA"]
@@ -322,12 +321,10 @@ def check_in_silico_pcr_cli():
             encoding="utf-8",
         )
         (genome_dir / "genome.fna").write_text(
-            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n",
-            encoding="utf-8",
+            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
         )
         (genome_dir / "genome2.fna").write_text(
-            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n",
-            encoding="utf-8",
+            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
         )
         subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [

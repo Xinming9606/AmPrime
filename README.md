@@ -162,19 +162,19 @@ div_cut_per_gene:
 
 For each gene, outputs are written under `results/<genus>/`.
 
-| File                            | Contents                                                                          |
-| ------------------------------- | --------------------------------------------------------------------------------- |
-| `reports/<gene>_report.html`    | Main deliverable: recommendation, PCR/species validation, plot, and candidates.   |
-| `reports/gene_report_cross.html` | Cross-gene comparison of amplification and species-level metrics.                |
-| `genomes/download_manifest.tsv` | Download manifest with FASTA counts, sizes, config SHA-256, and data fingerprints. |
-| `aligned/<gene>.alignment.tsv`  | Alignment backend metadata, including actual backend used when `auto` is set.     |
-| `primers/<gene>_primers.tsv`    | Filtered candidate primer pairs ranked by score.                                  |
-| `primers/<gene>_amplicons.tsv`  | In silico PCR results for the top validated primer candidates, sorted best first. |
+| File                                 | Contents                                                                             |
+| ------------------------------------ | ------------------------------------------------------------------------------------ |
+| `reports/<gene>_report.html`         | Main deliverable: recommendation, PCR/species validation, plot, and candidates.      |
+| `reports/gene_report_cross.html`     | Cross-gene comparison of amplification and species-level metrics.                    |
+| `genomes/download_manifest.tsv`      | Download manifest with FASTA counts, sizes, config SHA-256, and data fingerprints.   |
+| `aligned/<gene>.alignment.tsv`       | Alignment backend metadata, including actual backend used when `auto` is set.        |
+| `primers/<gene>_primers.tsv`         | Filtered candidate primer pairs ranked by score.                                     |
+| `primers/<gene>_amplicons.tsv`       | In silico PCR results for the top validated primer candidates, sorted best first.    |
 | `primers/<gene>_species_summary.tsv` | Species-level amplification, allele multiplicity, and inter-species overlap metrics. |
-| `primers/<gene>_species.tsv` | Per-species amplicon allele and overlap summary. |
-| `primers/<gene>_diversity.png`  | Per-position Shannon entropy plot with top primer sites marked.                   |
-| `logs/...`                      | Per-step logs for debugging.                                                      |
-| `benchmarks/...`                | Snakemake benchmark files.                                                        |
+| `primers/<gene>_species.tsv`         | Per-species amplicon allele and overlap summary.                                     |
+| `primers/<gene>_diversity.png`       | Per-position Shannon entropy plot with top primer sites marked.                      |
+| `logs/...`                           | Per-step logs for debugging.                                                         |
+| `benchmarks/...`                     | Snakemake benchmark files.                                                           |
 
 ## Project Layout
 
@@ -223,6 +223,7 @@ AmPrime/
 |   |   |-- gene_report.py
 |   |   |-- gene_report_cross.py
 |   |   |-- gene_report_cross.html
+|   |   |-- report.css
 |   |   |-- common.py
 |   |   |-- fasta_io.py
 |   |   `-- gene_report.html
@@ -278,14 +279,10 @@ pixi run conda-build
 pixi run conda-install-test
 ```
 
-`source-archive` writes source `.zip` and `.tar.gz` archives under `dist/`.
-`conda-build` writes a local conda package under `dist/conda/`.
-`conda-install-test` builds `amprime`, publishes it to an indexed local conda
-channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer
-project, checks the `amprime` command, verifies the bundled config/workflow
-resources, and runs a Snakemake dry run from the installed package.
-
-`metadata-check` keeps mirrored project metadata honest: package names and versions must match across `pixi.toml` and `pyproject.toml`, conda runtime dependencies must stay in `pixi.toml`, and the legacy `environment.yaml` must mirror the default Pixi environment.
+- `source-archive` writes source `.zip` and `.tar.gz` archives under `dist/`.
+- `conda-build` writes a local conda package under `dist/conda/`.
+- `conda-install-test` builds `amprime`, publishes it to an indexed local conda channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer project, checks the `amprime` command, verifies the bundled config/workflow resources, and runs a Snakemake dry run from the installed package.
+- `metadata-check` keeps mirrored project metadata honest: package names and versions must match across `pixi.toml` and `pyproject.toml`, conda runtime dependencies must stay in `pixi.toml`, and the legacy `environment.yaml` must mirror the default Pixi environment.
 
 For the end-to-end Borrelia functional test, including CI dataset download, see
 [docs/test-functional.md](docs/test-functional.md).

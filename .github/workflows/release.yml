@@ -32,7 +32,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/borrelia-genomes.tar.gz
-          key: amprime-borrelia-genomes-${{ runner.os }}-${{ hashFiles('config/config.yaml', 'tools/download_test_dataset.py', 'workflow/scripts/download_genomes.py') }}
+          key: amprime-borrelia-genomes-${{ runner.os }}-${{ hashFiles('config/config.yaml', 'workflow/Snakefile', 'tools/download_test_dataset.py', 'workflow/scripts/genomes_download.py', 'workflow/scripts/gene_extract.py') }}
 
       - name: Download CI test dataset
         if: steps.test-data-cache.outputs.cache-hit != 'true'
