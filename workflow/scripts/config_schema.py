@@ -66,9 +66,13 @@ def validate_config(cfg):
     """Raise ValueError with actionable messages when the config is invalid."""
     errors = []
 
-    for key in REQUIRED_SETTINGS:
-        if key not in cfg:
-            errors.append(f"missing required setting: {key}")
+    errors.extend(
+        [
+            f"missing required setting: {key}"
+            for key in REQUIRED_SETTINGS
+            if key not in cfg
+        ]
+    )
 
     genus = cfg.get("genus")
     if not isinstance(genus, str) or not genus.strip():
@@ -93,9 +97,13 @@ def validate_config(cfg):
     if alignment_backend not in ALLOWED_ALIGNMENT_BACKENDS:
         errors.append("alignment_backend must be one of: python, auto, mafft, muscle")
 
-    for key in ["primer_len", "amplicon_min_len", "amplicon_max_len"]:
-        if not _is_int(cfg.get(key)) or cfg.get(key) <= 0:
-            errors.append(f"{key} must be a positive integer")
+    errors.extend(
+        [
+            f"{key} must be a positive integer"
+            for key in ["primer_len", "amplicon_min_len", "amplicon_max_len"]
+            if not _is_int(cfg.get(key)) or cfg.get(key) <= 0
+        ]
+    )
 
     if (
         _is_int(cfg.get("amplicon_min_len"))
@@ -147,9 +155,13 @@ def validate_config(cfg):
             if not _is_number(value) or value < 0:
                 errors.append(f"div_cut_per_gene.{gene} must be non-negative")
 
-    for key in QC_THRESHOLD_SETTINGS:
-        if key in cfg and cfg[key] is not None and not _is_number(cfg[key]):
-            errors.append(f"{key} must be a number or null")
+    errors.extend(
+        [
+            f"{key} must be a number or null"
+            for key in QC_THRESHOLD_SETTINGS
+            if key in cfg and cfg[key] is not None and not _is_number(cfg[key])
+        ]
+    )
 
     if errors:
         raise ValueError("Invalid config/config.yaml:\n- " + "\n- ".join(errors))

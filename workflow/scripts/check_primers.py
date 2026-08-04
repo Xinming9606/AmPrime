@@ -269,10 +269,11 @@ def check_pair(row: dict, thresholds: dict) -> dict:
         if limit is not None and metrics[key] < limit:
             fails.append(key)
 
-    metrics["qc_pass"] = len(fails) == 0
-    metrics["qc_fail_reasons"] = ";".join(fails) if fails else ""
+    result: dict[str, float | bool | str] = dict(metrics)
+    result["qc_pass"] = len(fails) == 0
+    result["qc_fail_reasons"] = ";".join(fails) if fails else ""
 
-    return metrics
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -367,10 +368,10 @@ def main():
                     "qc_pass",
                     "qc_fail_reasons",
                 ]
-                w.writerow(reader.fieldnames + extra)
+                w.writerow(list(reader.fieldnames) + extra)
         return
 
-    in_fields = reader.fieldnames or []
+    in_fields = list(reader.fieldnames or [])
     qc_fields = [
         "hairpin_fwd_dg",
         "hairpin_rev_dg",

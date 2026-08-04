@@ -26,16 +26,19 @@ import logging
 import os
 from bisect import bisect_left, bisect_right
 from time import perf_counter
+from typing import Any
 
-from common import config_param as _param
-from common import configure_logging
-from common import required_param as _required_param
-from common import reverse_complement as _rev_comp
+from common import (
+    config_param as _param,
+    configure_logging,
+    required_param as _required_param,
+    reverse_complement as _rev_comp,
+)
 from config_schema import load_config_file
 
-plt = None
-np = None
-AlignIO = None
+plt: Any = None
+np: Any = None
+AlignIO: Any = None
 
 _IUPAC_MAP = {
     "A": "A",
@@ -387,7 +390,8 @@ def main():
         log.info("  %-18s = %s", k, v)
 
     # --- 1. Load alignment ------------------------------------------------
-    records = list(AlignIO.parse(aln_file, "fasta"))
+    alignment = AlignIO.read(aln_file, "fasta")
+    records = list(alignment)
     if len(records) < 2:
         msg = f"Need at least 2 sequences to estimate diversity; found {len(records)}."
         log.warning(msg)

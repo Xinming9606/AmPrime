@@ -64,8 +64,10 @@ The main idea is simple:
 3. Dereplicate near-identical sequences so redundant strains do not dominate.
 4. Align representative sequences with the configured alignment backend.
 5. Find conserved primer windows that flank a variable amplicon region.
-6. Filter primer pairs for simple secondary-structure risks. primer scanner.
-7. Write a browsable HTML report.
+6. Filter primer pairs for simple secondary-structure risks.
+7. Validate the best QC-passed candidates against full genomes with the
+   Python primer scanner.
+8. Write a browsable HTML report.
 
 Missing genes are handled gracefully. If a gene cannot be found, the pipeline continues and writes a report showing that no candidates were available.
 
@@ -294,10 +296,10 @@ amprime functional-test
 amprime verify --genus Borrelia --gene recG --expect-no-candidates
 ```
 
-The CI workflow runs `pixi run ci` and `pixi run conda-install-test` on pushes
-and pull requests. Pushing a tag like `v0.1.0` runs the release workflow, builds
-source archives plus a conda package under `dist/`, uploads them as workflow
-artifacts, and attaches them to the GitHub Release.
+The CI workflow runs `pixi run ci` on pushes and pull requests. Pushing a tag
+like `v0.1.0` runs the release workflow, verifies a clean conda-package install,
+builds source archives plus a conda package under `dist/`, uploads them as
+workflow artifacts, and attaches them to the GitHub Release.
 
 ## Troubleshooting
 
@@ -335,8 +337,7 @@ The workflow dependencies are declared in:
 pixi.toml
 ```
 
-The legacy micromamba/conda environment file mirrors the default Pixi
-dependencies for users who prefer that tooling:
+The legacy micromamba/conda environment file mirrors the default Pixi dependencies for users who prefer that tooling:
 
 ```bash
 micromamba env create -f workflow/envs/environment.yaml

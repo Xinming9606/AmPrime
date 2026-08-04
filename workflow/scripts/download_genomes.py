@@ -39,7 +39,9 @@ def run_download(genus, assembly_level, fmt, out_dir):
         out_dir,
     ]
     log.info("Running: %s", " ".join(cmd))
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(  # noqa: S603 - fixed downloader with shell=False.
+        cmd, capture_output=True, text=True
+    )
     if result.stdout:
         log.info(result.stdout.rstrip())
     if result.stderr:
@@ -166,7 +168,7 @@ def main():
     n_gen = manifest_rows[0]["n_fna"]
     n_cds = manifest_rows[1]["n_fna"]
     n_rna = manifest_rows[2]["n_fna"]
-    total_bytes = sum(row["total_bytes"] for row in manifest_rows)
+    total_bytes = sum(int(row["total_bytes"]) for row in manifest_rows)
     elapsed = perf_counter() - started
     log.info(
         "Downloaded: %d genomic, %d CDS, %d RNA files for genus %s "

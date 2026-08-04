@@ -26,6 +26,3 @@ jobs:
 
       - name: Run project checks
         run: pixi run ci
-
-      - name: Test built package install
-        run: pixi run conda-install-test

@@ -127,9 +127,13 @@ def _first_available_backend():
 def _run_and_log(cmd, stdout=None):
     log.info("Running: %s", " ".join(str(part) for part in cmd))
     if stdout is None:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(  # noqa: S603 - backend commands use shell=False.
+            cmd, capture_output=True, text=True
+        )
     else:
-        result = subprocess.run(cmd, stdout=stdout, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(  # noqa: S603 - backend commands use shell=False.
+            cmd, stdout=stdout, stderr=subprocess.PIPE, text=True
+        )
     if result.stdout:
         log.info(result.stdout.rstrip())
     if result.stderr:
@@ -152,7 +156,7 @@ def _backend_version(backend):
         return ""
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 - executable came from allowed PATH lookup.
             [exe, "--version"], capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.SubprocessError):

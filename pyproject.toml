@@ -32,8 +32,27 @@ config = "amprime/config"
 workflow = "amprime/workflow"
 Snakefile = "amprime/Snakefile"
 
+[tool.pyrefly]
+# Workflow scripts are executable modules and import their sibling modules
+# (for example, config_schema.py) as top-level imports.
+project-includes = [
+  "amprime/**/*.py",
+  "tools/**/*.py",
+  "workflow/scripts/**/*.py",
+]
+project-excludes = [
+  ".pixi/**",
+  ".snakemake/**",
+  "dist/**",
+  "results/**",
+]
+search-path = [
+  ".",
+  "workflow/scripts",
+]
+python-version = "3.12"
+
 [tool.ruff]
-fix = true
 target-version = "py312"
 line-length = 88
 extend-exclude = [
@@ -45,57 +64,30 @@ extend-exclude = [
 ]
 
 [tool.ruff.format]
+# Enable reformatting of code snippets in docstrings
 docstring-code-format = true
+# Format all docstring code snippets with a line length of 60
 docstring-code-line-length = 60
-line-ending = "lf"
-skip-magic-trailing-comma = true
+
+skip-magic-trailing-comma = false
 
 [tool.ruff.lint]
-extend-select = [
+select = [
   "E",
-  "W",
   "F",
-  "B",
-  "C4",
-  "EM",
-  "FA",
-  "G",
-  "INT",
-  "PIE",
-  "PT",
-  "PYI",
-  "Q",
-  "RET",
-  "RSE",
-  "SLOT",
-  "T10",
-  "YTT",
-  "DTZ",
   "I",
-  "ISC",
-  "PERF",
-  "RUF",
-  "S",
-  "SIM",
-  "TID",
-  "UP"
+  "UP",
+  "B",
 ]
-fixable = ["ALL"]
-ignore = [
-  "EM101",
-  "EM102",
-  "ISC001",
-  "E501",
-  "RUF001",
-  "RUF002",
-  "RUF003",
-  "S101"
-]
+
+[tool.ruff.lint.per-file-ignores]
+"workflow/scripts/*.py" = ["E402"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "numpy"
 
 [tool.ruff.lint.isort]
+detect-same-package = false
 case-sensitive = true
 combine-as-imports = true
 force-wrap-aliases = true

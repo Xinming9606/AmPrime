@@ -15,9 +15,12 @@ import sys
 from bisect import bisect_left, bisect_right
 from time import perf_counter
 
-from common import config_param as _param
-from common import configure_logging, reverse_complement
-from common import required_param as _required_param
+from common import (
+    config_param as _param,
+    configure_logging,
+    required_param as _required_param,
+    reverse_complement,
+)
 from config_schema import load_config_file
 from fasta_io import parse_fasta
 

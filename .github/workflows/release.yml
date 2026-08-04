@@ -30,9 +30,6 @@ jobs:
       - name: Run project checks
         run: pixi run ci
 
-      - name: Test built package install
-        run: pixi run conda-install-test
-
   release:
     name: Build and publish release artifacts
     runs-on: ubuntu-latest
@@ -52,6 +49,9 @@ jobs:
 
       - name: Build conda package
         run: pixi run conda-build
+
+      - name: Test built package install
+        run: pixi run conda-install-test
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

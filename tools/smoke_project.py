@@ -42,7 +42,7 @@ def load_script_module(module_name):
 
 
 def run_script_help(script_name):
-    subprocess.run(
+    subprocess.run(  # noqa: S603 - fixed Python executable and project script.
         [sys.executable, str(SCRIPTS / script_name), "--help"],
         cwd=ROOT,
         check=True,
@@ -65,7 +65,7 @@ def check_kmer_boundary():
     import numpy as np
 
     design_primers = load_script_module("design_primers")
-    design_primers.np = np
+    design_primers.__dict__["np"] = np
     kmers = design_primers._build_kmers(
         np.array(list("acgt")),
         np.array(list("ACGT")),
@@ -88,7 +88,7 @@ def check_primer_qc_cli():
             "primer_id\tfwd\trev\np1\tAAAAAA\tAAAAAA\np2\tAAAAAA\tTTTTTT\n",
             encoding="utf-8",
         )
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
                 str(SCRIPTS / "check_primers.py"),
@@ -203,7 +203,7 @@ def check_sequence_cli_steps():
         raw_fasta.write_text(
             ">a\nACGTACGTACGT\n>b\nACGTACGTACGT\n>c\nACGTACGTTTGT\n", encoding="utf-8"
         )
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
                 str(SCRIPTS / "cluster_fasta.py"),
@@ -222,7 +222,7 @@ def check_sequence_cli_steps():
         )
         assert fasta_io.count_fasta_records(centroids) == 2
 
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
                 str(SCRIPTS / "align_fasta.py"),
@@ -272,7 +272,7 @@ def check_in_silico_pcr_cli():
         (genome_dir / "genome.fna").write_text(
             ">contig1\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
         )
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
                 str(SCRIPTS / "in_silico_pcr.py"),
@@ -350,7 +350,7 @@ def check_gene_report_cli():
             encoding="utf-8",
         )
 
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
                 str(SCRIPTS / "gene_report.py"),

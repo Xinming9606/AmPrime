@@ -11,7 +11,7 @@ import base64
 import csv
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from html import escape
 
 from config_schema import load_config_file
@@ -289,7 +289,7 @@ def main():
     body_md = _build_body(
         gene=gene,
         genus=genus,
-        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        timestamp=datetime.now(UTC).strftime("%Y-%m-%d %H:%M"),
         primers=primers,
         top_primer=_recommended_primer(primers, amplicons),
         pcr=amplicons[0] if amplicons else None,

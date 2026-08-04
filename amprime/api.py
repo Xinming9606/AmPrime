@@ -9,11 +9,12 @@ from __future__ import annotations
 
 import contextlib
 import csv
-import importlib.resources as resources
+import os
 import shutil
 import subprocess
 import tarfile
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 
 DEFAULT_GENUS = "Borrelia"
@@ -107,6 +108,20 @@ class AmPrimeProject:
             return root_snakefile
         return _resource_path("workflow", "Snakefile")
 
+    def workflow_scripts_dir(self) -> Path:
+        candidates = [
+            self.root / "workflow" / "scripts",
+            self.snakefile().parent / "scripts",
+            _resource_path("workflow", "scripts"),
+        ]
+        for candidate in candidates:
+            if (candidate / "config_schema.py").is_file():
+                return candidate
+        searched = "\n".join(str(candidate) for candidate in candidates)
+        raise ModuleNotFoundError(
+            f"Cannot find config_schema.py. Searched:\n{searched}"
+        )
+
     def ensure_default_config(self) -> Path:
         config_path = self.root / "config" / "config.yaml"
         if config_path.is_file():
@@ -175,8 +190,15 @@ class AmPrimeProject:
         if snakemake_target is not None:
             command.append(snakemake_target)
 
-        completed = subprocess.run(
-            command, cwd=self.root, check=False, text=True, capture_output=True
+        env = os.environ.copy()
+        scripts_dir = str(self.workflow_scripts_dir())
+        pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            scripts_dir if not pythonpath else f"{scripts_dir}{os.pathsep}{pythonpath}"
+        )
+
+        completed = subprocess.run(  # noqa: S603 - executable is fixed to Snakemake; shell is disabled.
+            command, cwd=self.root, check=False, text=True, capture_output=True, env=env
         )
         if completed.returncode != 0:
             raise subprocess.CalledProcessError(
