@@ -19,7 +19,11 @@ genomes/cds/
 genomes/rna/
 ```
 
-Current expected FASTA count: 82 files in each folder.
+Reference snapshot: the Borrelia NCBI download used when this guide was
+validated contained 82 FASTA files in each folder. The archive is generated on
+demand, is not committed to the repository, and may change as NCBI data
+changes. The counts below are therefore snapshot expectations, not permanent
+invariants.
 
 The CI workflow caches this archive by OS and configuration. On a cache miss,
 GitHub Actions downloads it from NCBI before running the test:
@@ -56,7 +60,7 @@ After installing the conda package, use:
 amprime functional-test
 ```
 
-Expected output ends with:
+For the reference snapshot, expected output ends with:
 
 ```text
 functional test ok
@@ -94,7 +98,9 @@ tar -xzf data/borrelia-genomes.tar.gz -C results/Borrelia
 ```
 
 ```bash
-pixi run snakemake --cores 4 --rerun-incomplete results/Borrelia/reports/recG_report.html
+pixi run snakemake --cores 4 --rerun-incomplete \
+  results/Borrelia/reports/recG_report.html \
+  results/Borrelia/reports/gene_report_cross.html
 ```
 
 Expected rules:
@@ -111,7 +117,7 @@ gene_extract -> cluster -> align -> primers_design -> primers_check -> in_silico
 pixi run python -m amprime verify --genus Borrelia --gene recG --expect-no-candidates
 ```
 
-Expected output:
+For the reference snapshot, expected output:
 
 ```text
 functional test ok
@@ -120,15 +126,18 @@ primer_rows=0 pcr_rows=0 backend=python report_bytes=<positive integer>
 
 ## Step 6. Interpret The Result
 
-With the default config, this dataset is expected to complete successfully but
-produce no primer candidates:
+For the reference snapshot and default config, the test is expected to
+complete successfully but produce no primer candidates:
 
 - `gene_extract` finds 82 `recG` CDS hits.
 - `cluster` reduces them to 12 centroids.
 - `align` uses the Python backend.
 - `gene_report` writes a complete no-candidate report.
 
-This is a passing test. Synthetic positive primer/PCR behavior is covered by:
+These counts and the no-candidate result are not guaranteed for a fresh NCBI
+download. Treat them as diagnostic values for this snapshot; the functional
+test's exact expectation should be updated if the snapshot changes. Synthetic
+positive primer/PCR behavior is covered by:
 
 ```bash
 pixi run smoke

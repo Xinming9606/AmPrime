@@ -200,6 +200,7 @@ AmPrime/
 |   |-- cli.py
 |   `-- __main__.py
 |-- docs/
+|   |-- paper.md
 |   `-- test-functional.md
 |-- workflow/
 |   |-- Snakefile
@@ -365,7 +366,9 @@ Both dependency files include the same default runtime: Snakemake, Python 3.12, 
 ## Limitations
 
 - Off-target specificity outside the target genus is not checked yet.
-- Primer windows are derived from the alignment consensus.
+- Primer sequences use a majority-rule consensus and IUPAC representation;
+  Shannon entropy is calculated independently from the observed A/C/G/T bases
+  in each alignment column.
 - The default Python alignment backend is a cross-platform first-pass fallback;
   use MAFFT or MUSCLE for higher-quality multiple sequence alignment when available.
 - Degenerate-base handling is conservative.
