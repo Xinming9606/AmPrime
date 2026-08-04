@@ -12,6 +12,7 @@ dependencies:
   - python=3.12
   - biopython
   - numpy
+  - numba
   - matplotlib-base
   - pyyaml
 

@@ -162,7 +162,7 @@ For each gene, outputs are written under `results/<genus>/`.
 | `reports/<gene>_report.html`         | Main deliverable: recommendation, PCR/species validation, plot, and candidates.      |
 | `reports/gene_report_cross.html`     | Cross-gene comparison of amplification and species-level metrics.                    |
 | `genomes/download_manifest.tsv`      | Download manifest with FASTA counts, sizes, config SHA-256, and data fingerprints.   |
-| `aligned/<gene>.alignment.tsv`       | MUSCLE version and alignment metadata.                                                  |
+| `aligned/<gene>.alignment.tsv`       | MUSCLE version and alignment metadata.                                               |
 | `primers/<gene>_primers.tsv`         | Filtered candidate primer pairs ranked by score.                                     |
 | `primers/<gene>_amplicons.tsv`       | In silico PCR results for the top validated primer candidates, sorted best first.    |
 | `primers/<gene>_species_summary.tsv` | Species-level amplification, allele multiplicity, and inter-species overlap metrics. |
@@ -236,7 +236,7 @@ Snakemake is intentionally kept as a thin scheduler. It manages dependencies, pa
 
 Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Clustering always uses VSEARCH at 97% identity, and representative sequences are aligned with MUSCLE. Alignment runs write a small metadata TSV next to the alignment, recording the MUSCLE executable and version. The same alignment summary is included in each HTML report so runs remain easy to audit.
 
-Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker processes allocated by Snakemake, while preserving deterministic result sorting. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The Python sequence algorithms still need benchmarking before very large genera are processed.
+Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker processes allocated by Snakemake, while preserving deterministic result sorting. Its inner primer matcher uses IUPAC bitmasks compiled with Numba; the first pass keeps only amplicon lengths, and allele sequences are collected only for the final recommended pair. Ambiguous target bases use a local fallback scan instead of forcing every contig through the slow path. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The `performance-smoke` task guards against large regressions before very large genera are processed.
 
 This keeps each step easy to test and debug. For example:
 
@@ -324,10 +324,7 @@ vsearch --version
 muscle --version
 ```
 
-On Windows, VSEARCH and MUSCLE are required. Each workflow step first checks
-for its executable, then checks for Scoop and installs the missing tool with
-`scoop install vsearch` or `scoop install muscle`. If Scoop is not installed,
-install it first using the instructions below.
+On Windows, VSEARCH and MUSCLE are required. Dependency setup first checks for each executable, then checks Scoop, loads the `main-plus` bucket with `scoop bucket add main-plus https://github.com/Scoopforge/Main-Plus` when needed, and installs the missing tool with Scoop. The Windows CI and Release workflows perform the same bucket setup explicitly before running the dependency check. If Scoop is not installed, install it first using the instructions below.
 
 If the test dataset check reports a checksum mismatch, remove the archive and its `.json` sidecar, then regenerate them together with `pixi run download-ci-test-data`.
 
@@ -363,7 +360,7 @@ That environment file lives at:
 workflow/envs/environment.yaml
 ```
 
-Both dependency files include the same default runtime: Snakemake, Python 3.12, Biopython, NumPy, Matplotlib, `ncbi-genome-download`, PyYAML, Python `markdown`, VSEARCH, and MUSCLE. Pixi installs both tools on Linux and Apple Silicon macOS; Windows installs them through Scoop when the workflow runs.
+Both dependency files include the same default runtime: Snakemake, Python 3.12, Biopython, NumPy, Numba, Matplotlib, `ncbi-genome-download`, PyYAML, Python `markdown`, VSEARCH, and MUSCLE. Pixi installs both tools on Linux and Apple Silicon macOS; Windows installs them through Scoop when the workflow runs.
 
 ### Windows command-line tools
 

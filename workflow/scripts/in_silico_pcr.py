@@ -17,6 +17,7 @@ from bisect import bisect_left, bisect_right
 from concurrent.futures import ProcessPoolExecutor
 from time import perf_counter
 
+import numpy as np
 from common import (
     config_param as _param,
     configure_logging,
@@ -25,6 +26,7 @@ from common import (
 )
 from config_schema import load_config_file
 from fasta_io import parse_fasta
+from numba import njit
 
 log = logging.getLogger(__name__)
 WARN_GENOME_COUNT = 500
@@ -53,23 +55,45 @@ SPECIES_TABLE_COLS = [
     "has_inter_species_overlap",
 ]
 
-IUPAC_BASES = {
-    "A": frozenset("A"),
-    "C": frozenset("C"),
-    "G": frozenset("G"),
-    "T": frozenset("T"),
-    "R": frozenset("AG"),
-    "Y": frozenset("CT"),
-    "M": frozenset("AC"),
-    "K": frozenset("GT"),
-    "S": frozenset("CG"),
-    "W": frozenset("AT"),
-    "B": frozenset("CGT"),
-    "D": frozenset("AGT"),
-    "H": frozenset("ACT"),
-    "V": frozenset("ACG"),
-    "N": frozenset("ACGT"),
+IUPAC_MASKS = {
+    "A": 0b0001,
+    "C": 0b0010,
+    "G": 0b0100,
+    "T": 0b1000,
+    "R": 0b0101,
+    "Y": 0b1010,
+    "M": 0b0011,
+    "K": 0b1100,
+    "S": 0b0110,
+    "W": 0b1001,
+    "B": 0b1110,
+    "D": 0b1101,
+    "H": 0b1011,
+    "V": 0b0111,
+    "N": 0b1111,
 }
+BASE_MASK_BY_ASCII = np.zeros(256, dtype=np.uint8)
+for _base, _mask in IUPAC_MASKS.items():
+    BASE_MASK_BY_ASCII[ord(_base)] = _mask
+
+
+@njit(cache=True, nogil=True)
+def _matching_starts_numba(target_masks, primer_masks, candidate_starts, max_mismatch):
+    """Verify candidate windows with compiled bitmask matching."""
+    hits = np.empty(candidate_starts.size, dtype=np.int64)
+    n_hits = 0
+    for candidate_idx in range(candidate_starts.size):
+        start = candidate_starts[candidate_idx]
+        mismatches = 0
+        for offset in range(primer_masks.size):
+            if primer_masks[offset] & target_masks[start + offset] == 0:
+                mismatches += 1
+                if mismatches > max_mismatch:
+                    break
+        if mismatches <= max_mismatch:
+            hits[n_hits] = start
+            n_hits += 1
+    return hits[:n_hits]
 
 
 def write_summary(rows, out_tsv):
@@ -81,9 +105,9 @@ def write_summary(rows, out_tsv):
 
 
 def base_matches(primer_base, target_base):
-    primer_set = IUPAC_BASES.get(primer_base.upper(), frozenset())
-    target_set = IUPAC_BASES.get(target_base.upper(), frozenset())
-    return bool(primer_set & target_set)
+    primer_mask = IUPAC_MASKS.get(primer_base.upper(), 0)
+    target_mask = IUPAC_MASKS.get(target_base.upper(), 0)
+    return bool(primer_mask & target_mask)
 
 
 def primer_window_mismatches(primer, sequence, start, max_mismatch):
@@ -100,6 +124,15 @@ def primer_window_mismatches(primer, sequence, start, max_mismatch):
 
 def _only_unambiguous_dna(seq):
     return all(base in UNAMBIGUOUS_BASES for base in seq)
+
+
+def _encode_masks(sequence):
+    raw = np.frombuffer(sequence.encode("ascii"), dtype=np.uint8)
+    return BASE_MASK_BY_ASCII[raw]
+
+
+def _primer_masks(primer):
+    return _encode_masks(primer.upper())
 
 
 def _seed_segments(primer, max_mismatch):
@@ -130,9 +163,6 @@ def _seed_segments(primer, max_mismatch):
 def _seed_candidate_starts(sequence, primer, max_mismatch):
     if len(sequence) < len(primer):
         return []
-    if not _only_unambiguous_dna(sequence):
-        return None
-
     segments = _seed_segments(primer, max_mismatch)
     if segments is None:
         return None
@@ -146,25 +176,51 @@ def _seed_candidate_starts(sequence, primer, max_mismatch):
             if 0 <= window_start <= max_start:
                 starts.add(window_start)
             found_at = sequence.find(seed, found_at + 1)
+
+    # Exact seed lookup cannot see a primer site that crosses an IUPAC base in
+    # the target. Only windows overlapping such a base need the slower matcher.
+    for position, base in enumerate(sequence):
+        if base in UNAMBIGUOUS_BASES:
+            continue
+        lo = max(0, position - len(primer) + 1)
+        hi = min(max_start, position)
+        starts.update(range(lo, hi + 1))
     return sorted(starts)
 
 
-def find_primer_sites(sequence, primer, max_mismatch):
+def _find_primer_sites(sequence, primer, primer_masks, target_masks, max_mismatch):
     primer = primer.upper()
     sequence = sequence.upper()
     k = len(primer)
     candidate_starts = _seed_candidate_starts(sequence, primer, max_mismatch)
-    starts = (
-        candidate_starts
-        if candidate_starts is not None
-        else range(len(sequence) - k + 1)
+    if candidate_starts is None:
+        candidate_array = np.arange(max(0, len(sequence) - k + 1), dtype=np.int64)
+    else:
+        candidate_array = np.asarray(candidate_starts, dtype=np.int64)
+    return _matching_starts_numba(
+        target_masks, primer_masks, candidate_array, max_mismatch
     )
-    for start in starts:
-        if (
-            primer_window_mismatches(primer, sequence, start, max_mismatch)
-            <= max_mismatch
-        ):
-            yield start
+
+
+def find_primer_sites(sequence, primer, max_mismatch):
+    sequence = sequence.upper()
+    primer = primer.upper()
+    target_masks = _encode_masks(sequence)
+    primer_masks = _primer_masks(primer)
+    for start in _find_primer_sites(
+        sequence, primer, primer_masks, target_masks, max_mismatch
+    ):
+        yield int(start)
+
+
+def _sites_for_strand(strand, fwd, rev_binding, fwd_masks, rev_masks, mismatch):
+    sequence = strand.upper()
+    target_masks = _encode_masks(sequence)
+    fwd_sites = _find_primer_sites(sequence, fwd, fwd_masks, target_masks, mismatch)
+    rev_sites = _find_primer_sites(
+        sequence, rev_binding, rev_masks, target_masks, mismatch
+    )
+    return sequence, fwd_sites.tolist(), rev_sites.tolist()
 
 
 def amplicon_lengths_for_sequence(sequence, fwd, rev, mismatch, valid_lo, valid_hi):
@@ -175,13 +231,17 @@ def amplicon_lengths_for_sequence(sequence, fwd, rev, mismatch, valid_lo, valid_
 
 
 def amplicon_lengths_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi):
+    fwd = fwd.upper()
     rev_binding = reverse_complement(rev)
     len_fwd = len(fwd)
     len_rev = len(rev)
+    fwd_masks = _primer_masks(fwd)
+    rev_masks = _primer_masks(rev_binding)
     lengths = []
     for strand in strands:
-        fwd_sites = list(find_primer_sites(strand, fwd, mismatch))
-        rev_sites = list(find_primer_sites(strand, rev_binding, mismatch))
+        _, fwd_sites, rev_sites = _sites_for_strand(
+            strand, fwd, rev_binding, fwd_masks, rev_masks, mismatch
+        )
         for fwd_start in fwd_sites:
             lo = max(fwd_start + len_fwd, fwd_start + valid_lo - len_rev)
             hi = fwd_start + valid_hi - len_rev
@@ -195,20 +255,24 @@ def amplicon_lengths_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi
 
 def amplicon_sequences_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi):
     """Return primer-oriented amplicon sequences for both DNA strands."""
+    fwd = fwd.upper()
     rev_binding = reverse_complement(rev)
     len_fwd = len(fwd)
     len_rev = len(rev)
+    fwd_masks = _primer_masks(fwd)
+    rev_masks = _primer_masks(rev_binding)
     sequences = []
     for strand in strands:
-        fwd_sites = list(find_primer_sites(strand, fwd, mismatch))
-        rev_sites = list(find_primer_sites(strand, rev_binding, mismatch))
+        sequence, fwd_sites, rev_sites = _sites_for_strand(
+            strand, fwd, rev_binding, fwd_masks, rev_masks, mismatch
+        )
         for fwd_start in fwd_sites:
             lo = max(fwd_start + len_fwd, fwd_start + valid_lo - len_rev)
             hi = fwd_start + valid_hi - len_rev
             start = bisect_left(rev_sites, lo)
             end = bisect_right(rev_sites, hi)
             sequences.extend(
-                strand[fwd_start : rev_start + len_rev]
+                sequence[fwd_start : rev_start + len_rev]
                 for rev_start in rev_sites[start:end]
             )
     return sequences
@@ -365,12 +429,11 @@ def _summarize_candidates(candidates, total_genomes):
 
 
 def _scan_genome(task):
-    """Scan one genome in a worker process and return raw candidate hits."""
+    """Scan one genome and return only candidate hit lengths."""
     genome, candidate_specs, mismatch, valid_lo, valid_hi = task
     genome_bp = 0
     genome_contigs = 0
     per_candidate_hits = [[] for _ in candidate_specs]
-    per_candidate_species = [{} for _ in candidate_specs]
     genome_species = set()
     for header, sequence in parse_fasta(genome):
         species = _species_from_header(header, os.path.basename(genome))
@@ -380,22 +443,17 @@ def _scan_genome(task):
         genome_contigs += 1
         strands = (sequence, reverse_complement(sequence))
         for idx, (fwd, rev) in enumerate(candidate_specs):
-            amplicons = amplicon_sequences_for_strands(
+            lengths = amplicon_lengths_for_strands(
                 strands, fwd, rev, mismatch, valid_lo, valid_hi
             )
-            if not amplicons:
+            if not lengths:
                 continue
-            per_candidate_hits[idx].extend(len(amplicon) for amplicon in amplicons)
-            species_alleles = per_candidate_species[idx].setdefault(species, set())
-            species_alleles.update(
-                _canonical_sequence(amplicon) for amplicon in amplicons
-            )
+            per_candidate_hits[idx].extend(lengths)
     return (
         os.path.basename(genome),
         genome_bp,
         genome_contigs,
         per_candidate_hits,
-        per_candidate_species,
         genome_species,
     )
 
@@ -406,23 +464,16 @@ def _record_genome_result(scan_result, candidates):
         genome_bp,
         genome_contigs,
         per_candidate_hits,
-        per_candidate_species,
         genome_species,
     ) = scan_result
     amplified_here = 0
-    for candidate, lengths, species_alleles in zip(
-        candidates, per_candidate_hits, per_candidate_species, strict=False
-    ):
+    for candidate, lengths in zip(candidates, per_candidate_hits, strict=False):
         candidate["all_species"].update(genome_species)
         if not lengths:
             continue
         amplified_here += 1
         candidate["amplified_genomes"] += 1
         candidate["amplicon_lengths"].extend(lengths)
-        if sum(len(alleles) for alleles in species_alleles.values()) > 1:
-            candidate["multi_allele_genomes"] += 1
-        for species, alleles in species_alleles.items():
-            candidate["species_alleles"].setdefault(species, set()).update(alleles)
 
     if amplified_here:
         log.info(
@@ -440,6 +491,37 @@ def _record_genome_result(scan_result, candidates):
             genome_bp,
         )
     return genome_bp, genome_contigs
+
+
+def _scan_best_candidate(task):
+    """Collect allele-level data for the candidate selected after the first pass."""
+    genome, fwd, rev, mismatch, valid_lo, valid_hi = task
+    species_alleles = {}
+    all_species = set()
+    multi_allele = False
+    for header, sequence in parse_fasta(genome):
+        species = _species_from_header(header, os.path.basename(genome))
+        all_species.add(species)
+        sequence = sequence.upper()
+        strands = (sequence, reverse_complement(sequence))
+        amplicons = amplicon_sequences_for_strands(
+            strands, fwd, rev, mismatch, valid_lo, valid_hi
+        )
+        if amplicons:
+            species_alleles.setdefault(species, set()).update(
+                _canonical_sequence(amplicon) for amplicon in amplicons
+            )
+    multi_allele = sum(len(alleles) for alleles in species_alleles.values()) > 1
+    return os.path.basename(genome), species_alleles, all_species, multi_allele
+
+
+def _record_best_candidate_result(scan_result, candidate):
+    _, species_alleles, all_species, multi_allele = scan_result
+    candidate["all_species"].update(all_species)
+    for species, alleles in species_alleles.items():
+        candidate["species_alleles"].setdefault(species, set()).update(alleles)
+    if multi_allele:
+        candidate["multi_allele_genomes"] += 1
 
 
 def main():
@@ -540,6 +622,26 @@ def main():
         for candidate in candidates
         if candidate["primer_id"] == best["primer_id"]
     )
+    best_tasks = [
+        (
+            genome,
+            best_candidate["fwd"],
+            best_candidate["rev"],
+            mismatch,
+            valid_lo,
+            valid_hi,
+        )
+        for genome in genomes
+    ]
+    log.info("Collecting allele data for best primer pair")
+    if workers > 1:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            best_results = executor.map(_scan_best_candidate, best_tasks)
+            for result in best_results:
+                _record_best_candidate_result(result, best_candidate)
+    else:
+        for task in best_tasks:
+            _record_best_candidate_result(_scan_best_candidate(task), best_candidate)
     log.info(
         "Best pair after PCR: %s amplified %s / %s genomes (rate %.3f)",
         best["primer_id"],

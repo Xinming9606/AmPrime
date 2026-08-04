@@ -294,6 +294,13 @@ def check_in_silico_pcr_cli():
     in_silico_pcr = load_script_module("in_silico_pcr")
     assert list(in_silico_pcr.find_primer_sites("AAGCTT", "AAGCAT", 1)) == [0]
     assert list(in_silico_pcr.find_primer_sites("AAGYTT", "AAGCTT", 0)) == [0]
+    assert list(in_silico_pcr.find_primer_sites("AAAANAAA", "AAAA", 0)) == [
+        0,
+        1,
+        2,
+        3,
+        4,
+    ]
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
