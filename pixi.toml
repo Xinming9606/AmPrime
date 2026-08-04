@@ -5,6 +5,7 @@ description = "Amplicon-sequencing primer design workflow for bacterial genera"
 authors = ["AmPrime contributors"]
 channels = ["conda-forge", "bioconda"]
 platforms = ["linux-64", "osx-arm64", "win-64"]
+preview = ["pixi-build"]
 
 [dependencies]
 # Default dependencies are intentionally cross-platform across Linux,
@@ -22,10 +23,47 @@ ruff = "*"
 
 [tasks]
 compile = "python tools/compile_project.py"
-lint = "ruff check workflow/scripts tools"
-format-check = "ruff format --check workflow/scripts tools"
+lint = "ruff check workflow/scripts tools amprime"
+format-check = "ruff format --check workflow/scripts tools amprime"
 smoke = "python tools/smoke_project.py"
 dry-run = "snakemake -n"
 pipeline = "snakemake --cores 4"
 ci = { depends-on = ["compile", "lint", "format-check", "smoke", "dry-run"] }
 package = "python tools/package_release.py"
+functional-test = "python -m amprime functional-test"
+build-package = "pixi publish --path . --target-dir dist/conda --force"
+publish-local = "pixi publish --target-dir dist/conda --force"
+package-install-test = "python tools/test_built_package.py"
+
+[package]
+name = "amprime"
+version = "0.1.0"
+publish = true
+
+[package.build]
+backend = { name = "pixi-build-python", version = "0.*" }
+
+[package.build.config]
+extra-input-globs = [
+  "amprime/**/*.py",
+  "config/**/*",
+  "workflow/**/*",
+  "Snakefile",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
+]
+
+[package.host-dependencies]
+hatchling = "*"
+python = "3.12.*"
+
+[package.run-dependencies]
+python = ">=3.12,<3.13"
+snakemake-minimal = ">=8"
+biopython = "*"
+numpy = "*"
+matplotlib-base = "*"
+pyyaml = "*"
+ncbi-genome-download = "*"
+markdown = "*"

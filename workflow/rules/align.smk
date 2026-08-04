@@ -20,14 +20,15 @@ rule align:
         aln = temp(str(ALIGNED / "{gene}.aln")),
         metadata = str(ALIGNED / "{gene}.alignment.tsv")
     params:
-        config_file = "config/config.yaml"
+        config_file = "config/config.yaml",
+        script = str(SCRIPTS_DIR / "align_fasta.py")
     log:
         str(RESULTS / "logs" / "align" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "align" / "{gene}.txt")
     shell:
         """
-        python workflow/scripts/align_fasta.py \
+        python {params.script:q} \
             --input {input:q} \
             --output {output.aln:q} \
             --metadata {output.metadata:q} \

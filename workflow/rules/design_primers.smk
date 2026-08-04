@@ -18,14 +18,15 @@ rule design_primers:
         plot = str(PRIMERS / "{gene}_diversity.png")
     params:
         gene = lambda wc: wc.gene,
-        config_file = "config/config.yaml"
+        config_file = "config/config.yaml",
+        script = str(SCRIPTS_DIR / "design_primers.py")
     log:
         str(RESULTS / "logs" / "design_primers" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "design_primers" / "{gene}.txt")
     shell:
         """
-        python workflow/scripts/design_primers.py \
+        python {params.script:q} \
             --aln {input.aln:q} \
             --out-tsv {output.tsv:q} \
             --out-plot {output.plot:q} \

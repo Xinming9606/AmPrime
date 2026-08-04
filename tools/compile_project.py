@@ -5,7 +5,13 @@ import py_compile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_FILES = sorted((ROOT / "workflow" / "scripts").glob("*.py"))
+PYTHON_FILES = sorted(
+    [
+        *(ROOT / "workflow" / "scripts").glob("*.py"),
+        *(ROOT / "tools").glob("*.py"),
+        *(ROOT / "amprime").glob("*.py"),
+    ]
+)
 
 
 def main():

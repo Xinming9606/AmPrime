@@ -20,14 +20,15 @@ rule extract_gene:
         gene = lambda wc: wc.gene,
         config_file = "config/config.yaml",
         cds_dir = str(GENOMES_CDS),
-        rna_dir = str(GENOMES_RNA)
+        rna_dir = str(GENOMES_RNA),
+        script = str(SCRIPTS_DIR / "extract_gene.py")
     log:
         str(RESULTS / "logs" / "extract_gene" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "extract_gene" / "{gene}.txt")
     shell:
         """
-        python workflow/scripts/extract_gene.py \
+        python {params.script:q} \
             --cds-dir {params.cds_dir:q} \
             --rna-dir {params.rna_dir:q} \
             --out-fasta {output:q} \

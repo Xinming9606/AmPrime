@@ -24,14 +24,15 @@ rule download_genomes:
         rna     = directory(str(GENOMES_RNA)),
         manifest = str(RESULTS / "genomes" / "download_manifest.tsv")
     params:
-        config_file = "config/config.yaml"
+        config_file = "config/config.yaml",
+        script = str(SCRIPTS_DIR / "download_genomes.py")
     log:
         str(RESULTS / "logs" / "download_genomes.log")
     benchmark:
         str(RESULTS / "benchmarks" / "download_genomes.txt")
     shell:
         """
-        python workflow/scripts/download_genomes.py \
+        python {params.script:q} \
             --config {params.config_file:q} \
             --genomic-dir {output.genomic:q} \
             --cds-dir {output.cds:q} \
