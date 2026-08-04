@@ -15,6 +15,7 @@ from collections import defaultdict
 from math import ceil, floor
 from time import perf_counter
 
+from common import configure_logging
 from fasta_io import count_fasta_records, parse_fasta, write_fasta
 
 log = logging.getLogger(__name__)
@@ -22,16 +23,6 @@ log = logging.getLogger(__name__)
 _GLOBALXX_ALIGNER = None
 WARN_SEQUENCE_COUNT = 1000
 WARN_CENTROID_COUNT = 500
-
-
-def configure_logging(log_path):
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    logging.basicConfig(
-        filename=log_path,
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
 
 def same_length_identity(seq_a, seq_b):

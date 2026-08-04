@@ -13,21 +13,12 @@ import os
 import re
 from time import perf_counter
 
+from common import configure_logging
 from config_schema import load_config_file
 from fasta_io import parse_fasta, write_fasta
 
 log = logging.getLogger(__name__)
 WARN_FASTA_FILE_COUNT = 1000
-
-
-def configure_logging(log_path):
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    logging.basicConfig(
-        filename=log_path,
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
 
 def header_matches(header, names):

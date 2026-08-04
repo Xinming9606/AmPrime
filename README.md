@@ -15,19 +15,13 @@ You give it:
 - a bacterial genus, such as `Borrelia`
 - one or more target genes, such as `recG`, `clpA`, or an MLST gene set
 
-It returns one self-contained HTML report per gene with the recommended primer
-pair, in silico PCR validation, sequence diversity plot, and all candidate
-primer pairs.
+It returns one self-contained HTML report per gene with the recommended primer pair, in silico PCR validation, sequence diversity plot, and all candidate primer pairs.
 
 ## When To Use
 
-Use AmPrime when you want a reproducible first-pass primer design workflow for
-a bacterial genus, especially when you want primers that should work across
-many genomes within that genus.
+Use AmPrime when you want a reproducible first-pass primer design workflow for a bacterial genus, especially when you want primers that should work across many genomes within that genus.
 
-It is not a full specificity checker yet. The current pipeline checks whether
-the best QC-passed primer candidates amplify genomes inside the target genus,
-but it does not test off-target amplification outside the genus.
+It is not a full specificity checker yet. The current pipeline checks whether the best QC-passed primer candidates amplify genomes inside the target genus, but it does not test off-target amplification outside the genus.
 
 ## How It Works
 
@@ -70,13 +64,10 @@ The main idea is simple:
 3. Dereplicate near-identical sequences so redundant strains do not dominate.
 4. Align representative sequences with the configured alignment backend.
 5. Find conserved primer windows that flank a variable amplicon region.
-6. Filter primer pairs for simple secondary-structure risks.
-7. Validate the best QC-passed candidates against full genomes with a Python
-   primer scanner.
-8. Write a browsable HTML report.
+6. Filter primer pairs for simple secondary-structure risks. primer scanner.
+7. Write a browsable HTML report.
 
-Missing genes are handled gracefully. If a gene cannot be found, the pipeline
-continues and writes a report showing that no candidates were available.
+Missing genes are handled gracefully. If a gene cannot be found, the pipeline continues and writes a report showing that no candidates were available.
 
 ## Quick Start
 
@@ -103,8 +94,7 @@ Reports are written to:
 results/<genus>/reports/<gene>_report.html
 ```
 
-Open the HTML file in a browser to inspect the recommended primer pair and
-validation summary.
+Open the HTML file in a browser to inspect the recommended primer pair and validation summary.
 
 ## Configuration
 
@@ -188,14 +178,23 @@ AmPrime/
 |-- Snakefile
 |-- pixi.toml
 |-- pixi.lock
+|-- pyproject.toml
 |-- .github/
 |   `-- workflows/
 |-- config/
 |   `-- config.yaml
 |-- tools/
 |   |-- compile_project.py
+|   |-- check_metadata.py
 |   |-- smoke_project.py
+|   |-- test_built_package.py
 |   `-- package_release.py
+|-- amprime/
+|   |-- api.py
+|   |-- cli.py
+|   `-- __main__.py
+|-- docs/
+|   `-- test-functional.md
 |-- workflow/
 |   |-- Snakefile
 |   |-- rules/
@@ -216,6 +215,7 @@ AmPrime/
 |   |   |-- check_primers.py
 |   |   |-- in_silico_pcr.py
 |   |   |-- gene_report.py
+|   |   |-- common.py
 |   |   |-- fasta_io.py
 |   |   `-- gene_report.html
 |   `-- envs/
@@ -225,16 +225,9 @@ AmPrime/
 
 ## Design Notes
 
-Snakemake is intentionally kept as a thin scheduler. It manages dependencies,
-parallel execution, logs, benchmarks, and resumability. The actual work is done
-by standalone Python command-line tools in `workflow/scripts/`.
+Snakemake is intentionally kept as a thin scheduler. It manages dependencies, parallel execution, logs, benchmarks, and resumability. The actual work is done by standalone Python command-line tools in `workflow/scripts/`.
 
-Download outputs are refreshed as a unit when the download rule runs, so stale
-FASTA files from a previous genus or assembly level do not mix into a new run.
-Alignment runs write a small metadata TSV next to the alignment, recording the
-requested backend and the backend actually used. The same alignment summary is
-included in each HTML report so `alignment_backend: auto` runs remain easy to
-audit.
+Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Alignment runs write a small metadata TSV next to the alignment, recording the requested backend and the backend actually used. The same alignment summary is included in each HTML report so `alignment_backend: auto` runs remain easy to audit.
 
 This keeps each step easy to test and debug. For example:
 
@@ -259,23 +252,27 @@ Useful commands:
 
 ```bash
 pixi run compile
+pixi run metadata-check
 pixi run lint
 pixi run format-check
 pixi run smoke
 pixi run dry-run
 pixi run pipeline
 pixi run ci
-pixi run package
 pixi run functional-test
-pixi run build-package
-pixi run publish-local
-pixi run package-install-test
+pixi run source-archive
+pixi run conda-build
+pixi run conda-install-test
 ```
 
-`package-install-test` builds `amprime`, publishes it to an indexed local conda
+`source-archive` writes source `.zip` and `.tar.gz` archives under `dist/`.
+`conda-build` writes a local conda package under `dist/conda/`.
+`conda-install-test` builds `amprime`, publishes it to an indexed local conda
 channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer
 project, checks the `amprime` command, verifies the bundled config/workflow
 resources, and runs a Snakemake dry run from the installed package.
+
+`metadata-check` keeps mirrored project metadata honest: package names and versions must match across `pixi.toml` and `pyproject.toml`, conda runtime dependencies must stay in `pixi.toml`, and the legacy `environment.yaml` must mirror the default Pixi environment.
 
 For an offline end-to-end run with the local Borrelia test dataset, see
 [docs/test-functional.md](docs/test-functional.md).
@@ -290,17 +287,17 @@ result = project.run_functional_test()
 print(result.report_html)
 ```
 
-After installing the conda package, the same API is exposed as the `amprime`
-command:
+After installing the conda package, the same API is exposed as the `amprime` command:
 
 ```bash
 amprime functional-test
 amprime verify --genus Borrelia --gene recG --expect-no-candidates
 ```
 
-The CI workflow runs `pixi run ci` and `pixi run package-install-test` on pushes
+The CI workflow runs `pixi run ci` and `pixi run conda-install-test` on pushes
 and pull requests. Pushing a tag like `v0.1.0` runs the release workflow, builds
-source archives under `dist/`, and publishes them to GitHub Releases.
+source archives plus a conda package under `dist/`, uploads them as workflow
+artifacts, and attaches them to the GitHub Release.
 
 ## Troubleshooting
 
@@ -318,19 +315,11 @@ If no primers are found, try one or more of the following:
 - use a less restrictive `assembly_level`
 - inspect the per-gene logs under `results/<genus>/logs/`
 
-If genome download fails, confirm that the genus name is recognized by NCBI and
-that your internet connection is available.
+If genome download fails, confirm that the genus name is recognized by NCBI and that your internet connection is available.
 
-If a batch run is slow, inspect the per-step logs and benchmarks under
-`results/<genus>/logs/` and `results/<genus>/benchmarks/`. The Python sequence
-steps log input sequence counts, centroid counts, scanned genome bases, and
-elapsed time. Start with a stricter assembly level such as `complete`, a smaller
-gene set, or a lower `pcr_top_n` when first testing a large genus.
+If a batch run is slow, inspect the per-step logs and benchmarks under `results/<genus>/logs/` and `results/<genus>/benchmarks/`. The Python sequence steps log input sequence counts, centroid counts, scanned genome bases, and elapsed time. Start with a stricter assembly level such as `complete`, a smaller gene set, or a lower `pcr_top_n` when first testing a large genus.
 
-If you use `alignment_backend: auto`, check
-the report or `results/<genus>/aligned/<gene>.alignment.tsv` to see whether the
-run used Python, MAFFT, or MUSCLE. For final reproducible runs, set the backend
-explicitly.
+If you use `alignment_backend: auto`, check the report or `results/<genus>/aligned/<gene>.alignment.tsv` to see whether the run used Python, MAFFT, or MUSCLE. For final reproducible runs, set the backend explicitly.
 
 ## Requirements
 
@@ -361,18 +350,14 @@ That environment file lives at:
 workflow/envs/environment.yaml
 ```
 
-Both dependency files include the same default runtime: Snakemake, Python 3.12,
-Biopython, NumPy, Matplotlib, `ncbi-genome-download`, PyYAML, and Python
-`markdown`. Optional MAFFT/MUSCLE alignment backends are not installed by
-default; install one separately before selecting it with `alignment_backend`.
+Both dependency files include the same default runtime: Snakemake, Python 3.12, Biopython, NumPy, Matplotlib, `ncbi-genome-download`, PyYAML, and Python `markdown`. Optional MAFFT/MUSCLE alignment backends are not installed by default; install one separately before selecting it with `alignment_backend`.
 
 ## Limitations
 
 - Off-target specificity outside the target genus is not checked yet.
 - Primer windows are derived from the alignment consensus.
 - The default Python alignment backend is a cross-platform first-pass fallback;
-  use MAFFT or MUSCLE for higher-quality multiple sequence alignment when
-  available.
+  use MAFFT or MUSCLE for higher-quality multiple sequence alignment when available.
 - Degenerate-base handling is conservative.
 - Very large genera can take a long time to download, align, and scan in Python.
 

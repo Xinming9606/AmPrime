@@ -10,7 +10,6 @@ import argparse
 import csv
 import gzip
 import logging
-import os
 import shutil
 import subprocess
 import sys
@@ -18,19 +17,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
+from common import configure_logging
 from config_schema import load_config_file
 
 log = logging.getLogger(__name__)
-
-
-def configure_logging(log_path):
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    logging.basicConfig(
-        filename=log_path,
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
 
 def run_download(genus, assembly_level, fmt, out_dir):

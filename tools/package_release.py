@@ -13,9 +13,12 @@ INCLUDE_PATHS = [
     "README.md",
     "LICENSE",
     "Snakefile",
+    "pyproject.toml",
     "pixi.toml",
     "pixi.lock",
+    "amprime",
     "config",
+    "docs",
     "workflow",
     "tools",
 ]

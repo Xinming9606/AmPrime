@@ -15,6 +15,9 @@ import sys
 from bisect import bisect_left, bisect_right
 from time import perf_counter
 
+from common import config_param as _param
+from common import configure_logging, reverse_complement
+from common import required_param as _required_param
 from config_schema import load_config_file
 from fasta_io import parse_fasta
 
@@ -55,20 +58,6 @@ IUPAC_BASES = {
     "N": frozenset("ACGT"),
 }
 
-IUPAC_COMPLEMENT = str.maketrans(
-    "ACGTRYMKSWHBVDNacgtrymkswhbvdn", "TGCAYRKMSWDVBHNtgcayrkmswdvbhn"
-)
-
-
-def configure_logging(log_path):
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    logging.basicConfig(
-        filename=log_path,
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-
 
 def write_summary(rows, out_tsv):
     os.makedirs(os.path.dirname(out_tsv), exist_ok=True)
@@ -76,10 +65,6 @@ def write_summary(rows, out_tsv):
         writer = csv.DictWriter(fh, fieldnames=OUT_COLS, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)
-
-
-def reverse_complement(seq):
-    return seq.translate(IUPAC_COMPLEMENT)[::-1]
 
 
 def base_matches(primer_base, target_base):
@@ -208,18 +193,6 @@ def parse_args():
     parser.add_argument("--top-n", type=int)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
-
-
-def _required_param(name, value):
-    if value is None:
-        raise SystemExit(
-            f"missing --{name.replace('_', '-')} or config setting: {name}"
-        )
-    return value
-
-
-def _param(cli_value, cfg, key):
-    return cli_value if cli_value is not None else cfg.get(key)
 
 
 def _float_or_default(value, default=0.0):

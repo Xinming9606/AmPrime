@@ -28,4 +28,4 @@ jobs:
         run: pixi run ci
 
       - name: Test built package install
-        run: pixi run package-install-test
+        run: pixi run conda-install-test

@@ -1,4 +1,6 @@
 name: amprime
+# Legacy micromamba/conda fallback. Keep this file in sync with the default
+# Pixi environment; `pixi run metadata-check` enforces the mirrored fields.
 channels:
   - conda-forge
   - bioconda

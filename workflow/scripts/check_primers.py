@@ -43,8 +43,7 @@ IUPAC_BASES = {
 }
 
 IUPAC_COMPLEMENT = str.maketrans(
-    "ACGTRYMKSWHBVDNacgtrymkswhbvdn",
-    "TGCAYRKMSWDVBHNtgcayrkmswdvbhn",
+    "ACGTRYMKSWHBVDNacgtrymkswhbvdn", "TGCAYRKMSWDVBHNtgcayrkmswdvbhn"
 )
 
 # ---------------------------------------------------------------------------
@@ -393,10 +392,7 @@ def main():
     passed = [r for r in checked if r["qc_pass"]]
     n_dropped = len(checked) - len(passed)
     log.info(
-        "Checked %d pairs; %d passed, %d dropped.",
-        len(checked),
-        len(passed),
-        n_dropped,
+        "Checked %d pairs; %d passed, %d dropped.", len(checked), len(passed), n_dropped
     )
 
     if not passed:
