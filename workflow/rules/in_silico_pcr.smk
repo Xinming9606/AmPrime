@@ -2,7 +2,7 @@
 # in_silico_pcr.smk
 #
 # Per-gene rule: validates the top-ranked QC-passed primer candidates against
-# the full genome assemblies using the Python primer scanner. Reports are sorted
+# the full genome assemblies using SeqKit. Reports are sorted
 # by in silico PCR performance so the HTML report can recommend the best hit.
 #
 # Inputs : results/{genus}/primers/{gene}_primers.tsv   (from primers_design)

@@ -12,7 +12,6 @@ dependencies:
   - python=3.12
   - biopython
   - numpy
-  - numba
   - matplotlib-base
   - pyyaml
 
@@ -22,10 +21,11 @@ dependencies:
   # reporting
   - markdown
 
-  # VSEARCH and MUSCLE are selected on Unix platforms. Windows installs them
+  # VSEARCH, MUSCLE, and SeqKit are selected on Unix platforms. Windows installs them
   # through Scoop when the workflow runs.
   - vsearch  # [unix]
   - muscle  # [unix]
+  - seqkit  # [unix]
 
   # development checks
   - ruff

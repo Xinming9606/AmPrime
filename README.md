@@ -64,7 +64,7 @@ The main idea is simple:
 4. Align representative sequences with MUSCLE.
 5. Find conserved primer windows that flank a variable amplicon region.
 6. Filter primer pairs for simple secondary-structure risks.
-7. Validate the best QC-passed candidates against full genomes with the Python primer scanner.
+7. Validate the best QC-passed candidates against full genomes with SeqKit.
 8. Write a browsable HTML report.
 
 Missing genes are handled gracefully. If a gene cannot be found, the pipeline continues and writes a report showing that no candidates were available.
@@ -232,11 +232,11 @@ AmPrime/
 
 ## Design Notes
 
-Snakemake is intentionally kept as a thin scheduler. It manages dependencies, parallel execution, logs, benchmarks, and resumability. The actual work is done by standalone Python command-line tools in `workflow/scripts/`. The shared `dependencies.py` module detects VSEARCH and MUSCLE and installs missing Windows tools through Scoop.
+Snakemake is intentionally kept as a thin scheduler. It manages dependencies, parallel execution, logs, benchmarks, and resumability. The actual work is done by standalone Python command-line tools in `workflow/scripts/`. The shared `dependencies.py` module detects VSEARCH, MUSCLE, and SeqKit and installs missing Windows tools through Scoop.
 
 Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Clustering always uses VSEARCH at 97% identity, and representative sequences are aligned with MUSCLE. Alignment runs write a small metadata TSV next to the alignment, recording the MUSCLE executable and version. The same alignment summary is included in each HTML report so runs remain easy to audit.
 
-Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker processes allocated by Snakemake, while preserving deterministic result sorting. Its inner primer matcher uses IUPAC bitmasks compiled with Numba; the first pass keeps only amplicon lengths, and allele sequences are collected only for the final recommended pair. Ambiguous target bases use a local fallback scan instead of forcing every contig through the slow path. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The `performance-smoke` task guards against large regressions before very large genera are processed.
+Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR invokes SeqKit once per genome for all candidate pairs, with worker processes allocated by Snakemake, while preserving deterministic result sorting. SeqKit reports the longest matching location for each primer pair; Python only parses those BED6+1 results and aggregates report metrics. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The `performance-smoke` task guards against large regressions before very large genera are processed.
 
 This keeps each step easy to test and debug. For example:
 
@@ -248,7 +248,7 @@ python workflow/scripts/gene_report.py --help
 
 ## Development
 
-Pixi is the primary project manager. It creates the conda/bioconda environment from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`. The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows. Intel macOS is not supported. Pixi installs VSEARCH and MUSCLE automatically on Ubuntu and Apple Silicon macOS. On Windows, the workflow checks for both executables and installs missing tools with Scoop when Scoop is available.
+Pixi is the primary project manager. It creates the conda/bioconda environment from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`. The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows. Intel macOS is not supported. Pixi installs VSEARCH, MUSCLE, and SeqKit automatically on Ubuntu and Apple Silicon macOS. On Windows, the workflow checks for all three executables and installs missing tools with Scoop when Scoop is available.
 
 Useful commands:
 
@@ -322,9 +322,10 @@ Check them with:
 ```bash
 vsearch --version
 muscle --version
+seqkit version
 ```
 
-On Windows, VSEARCH and MUSCLE are required. Dependency setup first checks for each executable, then checks Scoop, loads the `main-plus` bucket with `scoop bucket add main-plus https://github.com/Scoopforge/Main-Plus` when needed, and installs the missing tool with Scoop. The Windows CI and Release workflows perform the same bucket setup explicitly before running the dependency check. If Scoop is not installed, install it first using the instructions below.
+On Windows, VSEARCH, MUSCLE, and SeqKit are required. Dependency setup first checks for each executable, then checks Scoop, loads the `main-plus` bucket with `scoop bucket add main-plus https://github.com/Scoopforge/Main-Plus` when needed, and installs the missing tool with Scoop. The Windows CI and Release workflows perform the same bucket setup explicitly before running the dependency check. If Scoop is not installed, install it first using the instructions below.
 
 If the test dataset check reports a checksum mismatch, remove the archive and its `.json` sidecar, then regenerate them together with `pixi run download-ci-test-data`.
 
@@ -360,15 +361,15 @@ That environment file lives at:
 workflow/envs/environment.yaml
 ```
 
-Both dependency files include the same default runtime: Snakemake, Python 3.12, Biopython, NumPy, Numba, Matplotlib, `ncbi-genome-download`, PyYAML, Python `markdown`, VSEARCH, and MUSCLE. Pixi installs both tools on Linux and Apple Silicon macOS; Windows installs them through Scoop when the workflow runs.
+Both dependency files include the same default runtime: Snakemake, Python 3.12, Biopython, NumPy, Matplotlib, `ncbi-genome-download`, PyYAML, Python `markdown`, VSEARCH, MUSCLE, and SeqKit. Pixi installs the command-line tools on Linux and Apple Silicon macOS; Windows installs them through Scoop when the workflow runs.
 
 ### Windows command-line tools
 
-On Windows, AmPrime requires VSEARCH and MUSCLE. Install Scoop first, then run:
+On Windows, AmPrime requires VSEARCH, MUSCLE, and SeqKit. Install Scoop first, then run:
 
 ```powershell
 scoop bucket add main-plus https://github.com/Scoopforge/Main-Plus
-scoop install vsearch muscle
+scoop install vsearch muscle seqkit
 ```
 
 ## Limitations

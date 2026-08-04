@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 from pathlib import Path
 
 import yaml
@@ -21,6 +22,8 @@ DOWNLOAD_SCRIPT = ROOT / "workflow" / "scripts" / "genomes_download.py"
 DEFAULT_CONFIG = ROOT / "config" / "config.yaml"
 DEFAULT_OUTPUT = ROOT / "data" / "borrelia-genomes.tar.gz"
 SNAPSHOT_SCHEMA_VERSION = 1
+DOWNLOAD_ATTEMPTS = 3
+DOWNLOAD_RETRY_DELAY_SECONDS = 5
 
 
 def snapshot_metadata_path(archive: Path) -> Path:
@@ -102,15 +105,52 @@ def download_archive(output: Path, genus: str, config: Path) -> None:
             "--log",
             str(log_path),
         ]
-        try:
-            subprocess.run(command, cwd=ROOT, check=True, env=_project_env())
-        except subprocess.CalledProcessError as exc:
+        completed = None
+        for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=ROOT,
+                    check=False,
+                    env=_project_env(),
+                )
+            except OSError as exc:
+                if attempt == DOWNLOAD_ATTEMPTS:
+                    raise RuntimeError(
+                        f"Genome test-data downloader could not start: {exc}"
+                    ) from exc
+                print(
+                    f"Downloader start failed ({exc}); retrying "
+                    f"{attempt}/{DOWNLOAD_ATTEMPTS}...",
+                    file=sys.stderr,
+                )
+                time.sleep(DOWNLOAD_RETRY_DELAY_SECONDS)
+                continue
+
+            if completed.returncode == 0:
+                break
+
             if log_path.is_file():
                 print(log_path.read_text(encoding="utf-8"), file=sys.stderr)
+            if attempt < DOWNLOAD_ATTEMPTS:
+                print(
+                    f"Genome test-data download failed with exit code "
+                    f"{_format_returncode(completed.returncode)}; retrying "
+                    f"{attempt}/{DOWNLOAD_ATTEMPTS}...",
+                    file=sys.stderr,
+                )
+                time.sleep(DOWNLOAD_RETRY_DELAY_SECONDS)
+
+        if completed is None or completed.returncode != 0:
+            returncode = (
+                _format_returncode(completed.returncode)
+                if completed is not None
+                else "unknown"
+            )
             raise RuntimeError(
-                f"Genome test-data download failed with exit code {exc.returncode}. "
+                f"Genome test-data download failed with exit code {returncode}. "
                 "The downloader log was printed above."
-            ) from exc
+            )
 
         manifest = genomes / "download_manifest.tsv"
         with tarfile.open(partial_output, "w:gz") as archive:
@@ -128,6 +168,13 @@ def download_archive(output: Path, genus: str, config: Path) -> None:
 def _assembly_level(config: Path) -> str:
     values = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
     return str(values.get("assembly_level", "complete"))
+
+
+def _format_returncode(returncode: int) -> str:
+    """Make Windows' unsigned representation of ``-1`` diagnosable."""
+    if returncode == 0xFFFFFFFF:
+        return "-1 (Windows 0xFFFFFFFF)"
+    return str(returncode)
 
 
 def sha256_file(path: Path) -> str:
