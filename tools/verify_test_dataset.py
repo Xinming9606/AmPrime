@@ -4,14 +4,21 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
-
-from amprime.provenance import sha256_file
 
 
 def snapshot_metadata_path(archive: Path) -> Path:
     return archive.with_name(archive.name + ".json")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def verify(archive: Path) -> dict[str, object]:

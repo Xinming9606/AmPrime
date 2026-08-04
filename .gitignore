@@ -33,4 +33,5 @@ run_*.log
 
 data/*
 !data/.gitkeep
+!data/*.tar.gz.json
 download-debug/

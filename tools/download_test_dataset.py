@@ -16,8 +16,6 @@ from pathlib import Path
 
 import yaml
 
-from amprime.provenance import sha256_file
-
 ROOT = Path(__file__).resolve().parents[1]
 DOWNLOAD_SCRIPT = ROOT / "workflow" / "scripts" / "genomes_download.py"
 DEFAULT_CONFIG = ROOT / "config" / "config.yaml"
@@ -130,6 +128,14 @@ def download_archive(output: Path, genus: str, config: Path) -> None:
 def _assembly_level(config: Path) -> str:
     values = yaml.safe_load(config.read_text(encoding="utf-8")) or {}
     return str(values.get("assembly_level", "complete"))
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _project_env() -> dict[str, str]:
