@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# download_genomes.py
+# genomes_download.py
 #
 # Download genomic, CDS, and RNA FASTA files for a bacterial genus with
 # ncbi-genome-download.

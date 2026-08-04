@@ -1,16 +1,16 @@
 # =============================================================================
-# extract_gene.smk
+# gene_extract.smk
 #
 # Batch rule: extracts all target gene sequences from the downloaded CDS and
 # RNA FASTA files in one pass, producing one merged FASTA per gene.
 #
-# Depends on: rule download_genomes. Genome directories and config are passed
+# Depends on: rule genomes_download. Genome directories and config are passed
 # to the CLI as plain paths.
 #
 # Output : results/{genus}/extracted/{gene}.fasta   [temp, one per config gene]
 # =============================================================================
 
-rule extract_genes:
+rule gene_extract:
     input:
         cds = str(GENOMES_CDS),
         rna = str(GENOMES_RNA),
@@ -22,11 +22,11 @@ rule extract_genes:
         cds_dir = str(GENOMES_CDS),
         rna_dir = str(GENOMES_RNA),
         out_dir = str(EXTRACTED),
-        script = str(SCRIPTS_DIR / "extract_gene.py")
+        script = str(SCRIPTS_DIR / "gene_extract.py")
     log:
-        str(RESULTS / "logs" / "extract_gene.log")
+        str(RESULTS / "logs" / "gene_extract.log")
     benchmark:
-        str(RESULTS / "benchmarks" / "extract_gene.txt")
+        str(RESULTS / "benchmarks" / "gene_extract.txt")
     shell:
         """
         python {params.script:q} \

@@ -40,18 +40,18 @@ rule gene_report:
         """
 
 
-rule cross_gene_report:
+rule gene_report_cross:
     input:
         summaries = expand(str(PRIMERS / "{gene}_species_summary.tsv"), gene=GENES),
         config = CONFIG_FILE
     output:
-        str(REPORTS / "cross_gene_report.html")
+        str(REPORTS / "gene_report_cross.html")
     params:
-        script = str(SCRIPTS_DIR / "cross_gene_report.py")
+        script = str(SCRIPTS_DIR / "gene_report_cross.py")
     log:
-        str(RESULTS / "logs" / "cross_gene_report.log")
+        str(RESULTS / "logs" / "gene_report_cross.log")
     benchmark:
-        str(RESULTS / "benchmarks" / "cross_gene_report.txt")
+        str(RESULTS / "benchmarks" / "gene_report_cross.txt")
     shell:
         """
         python {params.script:q} \

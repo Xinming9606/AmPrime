@@ -5,8 +5,8 @@
 # the full genome assemblies using the Python primer scanner. Reports are sorted
 # by in silico PCR performance so the HTML report can recommend the best hit.
 #
-# Inputs : results/{genus}/primers/{gene}_primers.tsv   (from design_primers)
-#          results/{genus}/genomes/genomic/             (from download_genomes)
+# Inputs : results/{genus}/primers/{gene}_primers.tsv   (from primers_design)
+#          results/{genus}/genomes/genomic/             (from genomes_download)
 # Output : results/{genus}/primers/{gene}_amplicons.tsv
 # =============================================================================
 

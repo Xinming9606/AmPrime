@@ -9,7 +9,7 @@
 # Output : results/{genus}/aligned/{gene}.aln                [temp]
 #          results/{genus}/aligned/{gene}.alignment.tsv      [backend metadata]
 #
-# .aln is temp(): consumed only by design_primers; not needed afterwards.
+# .aln is temp(): consumed only by primers_design; not needed afterwards.
 # =============================================================================
 
 
@@ -22,7 +22,7 @@ rule align:
         metadata = str(ALIGNED / "{gene}.alignment.tsv")
     params:
         config_file = CONFIG_FILE,
-        script = str(SCRIPTS_DIR / "align_fasta.py")
+        script = str(SCRIPTS_DIR / "fasta_align.py")
     log:
         str(RESULTS / "logs" / "align" / "{gene}.log")
     benchmark:

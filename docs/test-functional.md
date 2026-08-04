@@ -100,10 +100,10 @@ pixi run snakemake --cores 4 --rerun-incomplete results/Borrelia/reports/recG_re
 Expected rules:
 
 ```text
-extract_genes -> cluster -> align -> design_primers -> check_primers -> in_silico_pcr -> gene_report -> cross_gene_report
+gene_extract -> cluster -> align -> primers_design -> primers_check -> in_silico_pcr -> gene_report -> gene_report_cross
 ```
 
-`download_genomes` should not run.
+`genomes_download` should not run.
 
 ## Step 5. Verify Outputs Manually
 
@@ -123,7 +123,7 @@ primer_rows=0 pcr_rows=0 backend=python report_bytes=<positive integer>
 With the default config, this dataset is expected to complete successfully but
 produce no primer candidates:
 
-- `extract_gene` finds 82 `recG` CDS hits.
+- `gene_extract` finds 82 `recG` CDS hits.
 - `cluster` reduces them to 12 centroids.
 - `align` uses the Python backend.
 - `gene_report` writes a complete no-candidate report.

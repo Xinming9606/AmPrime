@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# extract_gene.py
+# gene_extract.py
 #
 # Extract target gene sequences from downloaded CDS and RNA FASTA files.
 # Batch mode scans both directories once and writes one FASTA per configured

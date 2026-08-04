@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import csv
-import os
 from html import escape
 from pathlib import Path
+
+_HTML_TEMPLATE = (Path(__file__).with_name("gene_report_cross.html")).read_text(
+    encoding="utf-8"
+)
 
 
 def _read_metrics(path: str) -> dict[str, str]:
@@ -64,28 +67,9 @@ def _build_html(summary_paths: list[str]) -> str:
         ("unique_amplicon_alleles", "Unique alleles"),
     ]
     header_html = "".join(f"<th>{escape(label)}</th>" for _, label in headers)
-    return f"""<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AmPrime cross-gene comparison</title>
-<style>
-body {{ font-family: system-ui, sans-serif; color: #24313a; margin: 2rem; }}
-main {{ max-width: 1100px; margin: auto; }}
-table {{ border-collapse: collapse; width: 100%; }}
-th, td {{ border: 1px solid #d8dee3; padding: .55rem .7rem; text-align: left; }}
-th {{ background: #eef3f5; }}
-.note {{ color: #56636b; }}
-</style>
-</head>
-<body><main>
-<h1>AmPrime cross-gene comparison</h1>
-<p class="note">Best validated pair for each configured gene.</p>
-<table><thead><tr>{header_html}</tr></thead><tbody>{body_rows}</tbody></table>
-</main></body>
-</html>
-"""
+    return _HTML_TEMPLATE.replace("{HEADER_HTML}", header_html).replace(
+        "{BODY_ROWS}", body_rows
+    )
 
 
 def main() -> None:
@@ -93,7 +77,7 @@ def main() -> None:
     parser.add_argument("--summary-tsv", nargs="+", required=True)
     parser.add_argument("--out-html", required=True)
     args = parser.parse_args()
-    os.makedirs(os.path.dirname(args.out_html), exist_ok=True)
+    Path(args.out_html).parent.mkdir(parents=True, exist_ok=True)
     Path(args.out_html).write_text(_build_html(args.summary_tsv), encoding="utf-8")
 
 

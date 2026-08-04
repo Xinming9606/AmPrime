@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# check_primers.py
+# primers_check.py
 #
 # Primer quality filter: computes hairpin, homodimer, heterodimer, and
 # 3'-end stability for every primer pair, then drops pairs that fail any
@@ -10,7 +10,7 @@
 # pure Python; no primer3 C library required. Works on any OS.
 #
 # CLI:
-#   python check_primers.py --in-tsv primers_raw.tsv --out-tsv primers.tsv \
+#   python primers_check.py --in-tsv primers_raw.tsv --out-tsv primers.tsv \
 #       --max-hairpin-dg 0 --max-homodimer-dg -6 ...
 # =============================================================================
 

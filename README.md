@@ -165,7 +165,7 @@ For each gene, outputs are written under `results/<genus>/`.
 | File                            | Contents                                                                          |
 | ------------------------------- | --------------------------------------------------------------------------------- |
 | `reports/<gene>_report.html`    | Main deliverable: recommendation, PCR/species validation, plot, and candidates.   |
-| `reports/cross_gene_report.html` | Cross-gene comparison of amplification and species-level metrics.                |
+| `reports/gene_report_cross.html` | Cross-gene comparison of amplification and species-level metrics.                |
 | `genomes/download_manifest.tsv` | Download manifest with FASTA counts, sizes, config SHA-256, and data fingerprints. |
 | `aligned/<gene>.alignment.tsv`  | Alignment backend metadata, including actual backend used when `auto` is set.     |
 | `primers/<gene>_primers.tsv`    | Filtered candidate primer pairs ranked by score.                                  |
@@ -204,24 +204,25 @@ AmPrime/
 |-- workflow/
 |   |-- Snakefile
 |   |-- rules/
-|   |   |-- download_genomes.smk
-|   |   |-- extract_gene.smk
+|   |   |-- genomes_download.smk
+|   |   |-- gene_extract.smk
 |   |   |-- cluster.smk
 |   |   |-- align.smk
-|   |   |-- design_primers.smk
-|   |   |-- check_primers.smk
+|   |   |-- primers_design.smk
+|   |   |-- primers_check.smk
 |   |   |-- in_silico_pcr.smk
 |   |   `-- reports.smk
 |   |-- scripts/
-|   |   |-- download_genomes.py
-|   |   |-- extract_gene.py
-|   |   |-- cluster_fasta.py
-|   |   |-- align_fasta.py
-|   |   |-- design_primers.py
-|   |   |-- check_primers.py
+|   |   |-- genomes_download.py
+|   |   |-- gene_extract.py
+|   |   |-- fasta_cluster.py
+|   |   |-- fasta_align.py
+|   |   |-- primers_design.py
+|   |   |-- primers_check.py
 |   |   |-- in_silico_pcr.py
 |   |   |-- gene_report.py
-|   |   |-- cross_gene_report.py
+|   |   |-- gene_report_cross.py
+|   |   |-- gene_report_cross.html
 |   |   |-- common.py
 |   |   |-- fasta_io.py
 |   |   `-- gene_report.html
@@ -243,8 +244,8 @@ processes allocated by Snakemake, while preserving deterministic result sorting.
 This keeps each step easy to test and debug. For example:
 
 ```bash
-python workflow/scripts/extract_gene.py --help
-python workflow/scripts/design_primers.py --help
+python workflow/scripts/gene_extract.py --help
+python workflow/scripts/primers_design.py --help
 python workflow/scripts/gene_report.py --help
 ```
 

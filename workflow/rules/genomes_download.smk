@@ -1,5 +1,5 @@
 # =============================================================================
-# download_genomes.smk
+# genomes_download.smk
 #
 # Downloads three FASTA types for the target genus from NCBI, each into its
 # own subdirectory:
@@ -17,7 +17,7 @@
 # =============================================================================
 
 
-rule download_genomes:
+rule genomes_download:
     input:
         config = CONFIG_FILE
     output:
@@ -27,11 +27,11 @@ rule download_genomes:
         manifest = str(RESULTS / "genomes" / "download_manifest.tsv")
     params:
         config_file = CONFIG_FILE,
-        script = str(SCRIPTS_DIR / "download_genomes.py")
+        script = str(SCRIPTS_DIR / "genomes_download.py")
     log:
-        str(RESULTS / "logs" / "download_genomes.log")
+        str(RESULTS / "logs" / "genomes_download.log")
     benchmark:
-        str(RESULTS / "benchmarks" / "download_genomes.txt")
+        str(RESULTS / "benchmarks" / "genomes_download.txt")
     shell:
         """
         python {params.script:q} \

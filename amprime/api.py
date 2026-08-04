@@ -302,9 +302,9 @@ class AmPrimeProject:
         if paths.diversity_png.stat().st_size <= 0:
             raise AssertionError(f"Empty diversity plot: {paths.diversity_png}")
 
-        cross_gene_report = paths.report_html.parent / "cross_gene_report.html"
-        if not cross_gene_report.is_file():
-            raise FileNotFoundError(f"Missing expected output: {cross_gene_report}")
+        cross_report = paths.report_html.parent / "gene_report_cross.html"
+        if not cross_report.is_file():
+            raise FileNotFoundError(f"Missing expected output: {cross_report}")
 
         primer_rows = _read_tsv(paths.primers_tsv)
         pcr_rows = _read_tsv(paths.amplicons_tsv)
@@ -354,16 +354,16 @@ class AmPrimeProject:
                 "--rerun-triggers",
                 "mtime",
                 "--forcerun",
-                "extract_genes",
+                "gene_extract",
                 "cluster",
                 "align",
-                "design_primers",
-                "check_primers",
+                "primers_design",
+                "primers_check",
                 "in_silico_pcr",
                 "gene_report",
             ],
         )
-        cross_target = self.result_dir(genus) / "reports" / "cross_gene_report.html"
+        cross_target = self.result_dir(genus) / "reports" / "gene_report_cross.html"
         self.run_pipeline(
             target=cross_target,
             cores=cores,
@@ -372,7 +372,7 @@ class AmPrimeProject:
                 "--rerun-triggers",
                 "mtime",
                 "--forcerun",
-                "cross_gene_report",
+                "gene_report_cross",
             ],
         )
         return self.verify_result_outputs(

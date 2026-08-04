@@ -87,16 +87,16 @@ REPORTS         = RESULTS / "reports"
 rule all:
     input:
         expand(str(REPORTS / "{gene}_report.html"), gene=GENES),
-        str(REPORTS / "cross_gene_report.html")
+        str(REPORTS / "gene_report_cross.html")
 
 # ---------------------------------------------------------------------------
 # Include rule modules (paths relative to this Snakefile in workflow/)
 # ---------------------------------------------------------------------------
-include: workflow.source_path("rules/download_genomes.smk")
-include: workflow.source_path("rules/extract_gene.smk")
+include: workflow.source_path("rules/genomes_download.smk")
+include: workflow.source_path("rules/gene_extract.smk")
 include: workflow.source_path("rules/cluster.smk")
 include: workflow.source_path("rules/align.smk")
-include: workflow.source_path("rules/design_primers.smk")
-include: workflow.source_path("rules/check_primers.smk")
+include: workflow.source_path("rules/primers_design.smk")
+include: workflow.source_path("rules/primers_check.smk")
 include: workflow.source_path("rules/in_silico_pcr.smk")
 include: workflow.source_path("rules/reports.smk")

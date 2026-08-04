@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# align_fasta.py
+# fasta_align.py
 #
 # Align centroid FASTA records. The default backend is a small cross-platform
 # Python center-star aligner; optional MAFFT/MUSCLE backends can be used when

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# design_primers.py - pure Python primer design implementation
+# primers_design.py - pure Python primer design implementation
 #
 # Reads a multiple sequence alignment (FASTA), computes per-position Shannon
 # entropy, builds degenerate (IUPAC) consensus kmer windows, evaluates all
@@ -9,7 +9,7 @@
 # Dependencies: numpy, matplotlib, Bio (Biopython).  No R required.
 #
 # CLI:
-#   python design_primers.py --aln input.aln --out-tsv primers.tsv \
+#   python primers_design.py --aln input.aln --out-tsv primers.tsv \
 #       --out-plot diversity.png --primer-len 20 ...
 #
 # TSV columns (same as R version):

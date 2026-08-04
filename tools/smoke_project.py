@@ -65,9 +65,9 @@ def check_config_validation():
 def check_kmer_boundary():
     import numpy as np
 
-    design_primers = load_script_module("design_primers")
-    design_primers.__dict__["np"] = np
-    kmers = design_primers._build_kmers(
+    primers_design = load_script_module("primers_design")
+    primers_design.__dict__["np"] = np
+    kmers = primers_design._build_kmers(
         np.array(list("acgt")),
         np.array(list("ACGT")),
         np.array([1, 1, 1, 1]),
@@ -92,7 +92,7 @@ def check_primer_qc_cli():
         subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
-                str(SCRIPTS / "check_primers.py"),
+                str(SCRIPTS / "primers_check.py"),
                 "--in-tsv",
                 str(in_tsv),
                 "--out-tsv",
@@ -126,7 +126,7 @@ def check_fasta_io():
 
 
 def check_batch_gene_extraction():
-    extract_gene = load_script_module("extract_gene")
+    gene_extract = load_script_module("gene_extract")
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         cds = tmp / "cds"
@@ -139,7 +139,7 @@ def check_batch_gene_extraction():
         )
         (rna / "genes.fna").write_text(">other [gene=other]\nAAAA\n", encoding="utf-8")
 
-        results = extract_gene.scan_fasta_dirs(
+        results = gene_extract.scan_fasta_dirs(
             [("CDS", cds), ("RNA", rna)],
             {"recG": {"recg"}, "tuf": {"tuf"}},
         )
@@ -149,7 +149,7 @@ def check_batch_gene_extraction():
 
 
 def check_download_manifest():
-    download_genomes = load_script_module("download_genomes")
+    genomes_download = load_script_module("genomes_download")
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         genomic = tmp / "genomic"
@@ -165,7 +165,7 @@ def check_download_manifest():
             ("cds", "cds-fasta", cds),
             ("rna", "rna-fasta", rna),
         ]
-        download_genomes.reset_download_outputs(downloads, manifest)
+        genomes_download.reset_download_outputs(downloads, manifest)
         assert genomic.is_dir()
         assert cds.is_dir()
         assert rna.is_dir()
@@ -173,7 +173,7 @@ def check_download_manifest():
         assert not manifest.exists()
         (genomic / "test.fna").write_text(">test\nACGT\n", encoding="utf-8")
 
-        download_genomes.write_manifest(
+        genomes_download.write_manifest(
             manifest,
             "Borrelia",
             "complete",
@@ -182,7 +182,7 @@ def check_download_manifest():
                     "label": "genomic",
                     "format": "fasta",
                     "output_dir": "genomic",
-                    **download_genomes.summarize_fna_dir(genomic),
+                    **genomes_download.summarize_fna_dir(genomic),
                 }
             ],
             config_sha256="config-test",
@@ -221,21 +221,21 @@ def check_archive_safety():
 
 
 def check_sequence_cli_steps():
-    cluster_fasta = load_script_module("cluster_fasta")
-    align_fasta = load_script_module("align_fasta")
+    fasta_cluster = load_script_module("fasta_cluster")
+    fasta_align = load_script_module("fasta_align")
     fasta_io = load_script_module("fasta_io")
 
-    assert cluster_fasta.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
-    assert align_fasta.choose_backend("python") == "python"
-    exact_deduped = cluster_fasta.cluster_records(
+    assert fasta_cluster.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
+    assert fasta_align.choose_backend("python") == "python"
+    exact_deduped = fasta_cluster.cluster_records(
         [(">a", "ACGT"), (">b", "acgt")], 0.97
     )
     assert len(exact_deduped) == 1
-    assert align_fasta.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
+    assert fasta_align.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
         (">a", "ACGT"),
         (">b", "TGCA"),
     ]
-    unequal_aligned = align_fasta.center_star_align(
+    unequal_aligned = fasta_align.center_star_align(
         [(">a", "ACGTACGT"), (">b", "ACGTTACGT"), (">c", "ACGTACG")]
     )
     assert len({len(seq) for _, seq in unequal_aligned}) == 1
@@ -256,7 +256,7 @@ def check_sequence_cli_steps():
         subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
-                str(SCRIPTS / "cluster_fasta.py"),
+                str(SCRIPTS / "fasta_cluster.py"),
                 "--input",
                 str(raw_fasta),
                 "--output",
@@ -275,7 +275,7 @@ def check_sequence_cli_steps():
         subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
-                str(SCRIPTS / "align_fasta.py"),
+                str(SCRIPTS / "fasta_align.py"),
                 "--input",
                 str(centroids),
                 "--output",
@@ -456,6 +456,42 @@ def check_gene_report_cli():
     print("gene report cli ok")
 
 
+def check_gene_report_cross_cli():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        summary = tmp / "recG_species_summary.tsv"
+        report = tmp / "reports" / "cross.html"
+        summary.write_text(
+            "metric\tvalue\n"
+            "amplified_genomes\t2\n"
+            "amplification_rate\t1.0\n"
+            "amplified_species\t1\n"
+            "multi_allele_genomes\t0\n"
+            "overlap_species\t0\n"
+            "overlap_rate\t0.0\n"
+            "unique_amplicon_alleles\t1\n",
+            encoding="utf-8",
+        )
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
+            [
+                sys.executable,
+                str(SCRIPTS / "gene_report_cross.py"),
+                "--summary-tsv",
+                str(summary),
+                "--out-html",
+                str(report),
+            ],
+            cwd=ROOT,
+            check=True,
+            env=smoke_env(),
+        )
+        html = report.read_text(encoding="utf-8")
+        assert "AmPrime cross-gene comparison" in html
+        assert "recG" in html
+        assert "100.0%" in html
+    print("cross-gene report cli ok")
+
+
 def check_amprime_api():
     from amprime import AmPrimeProject
 
@@ -473,14 +509,15 @@ def check_amprime_api():
 
 def main():
     for script_name in [
-        "download_genomes.py",
-        "extract_gene.py",
-        "cluster_fasta.py",
-        "align_fasta.py",
-        "design_primers.py",
-        "check_primers.py",
+        "genomes_download.py",
+        "gene_extract.py",
+        "fasta_cluster.py",
+        "fasta_align.py",
+        "primers_design.py",
+        "primers_check.py",
         "in_silico_pcr.py",
         "gene_report.py",
+        "gene_report_cross.py",
     ]:
         run_script_help(script_name)
 
@@ -494,6 +531,7 @@ def main():
     check_sequence_cli_steps()
     check_in_silico_pcr_cli()
     check_gene_report_cli()
+    check_gene_report_cross_cli()
     check_amprime_api()
 
 

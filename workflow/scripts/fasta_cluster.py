@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# cluster_fasta.py
+# fasta_cluster.py
 #
 # Dereplicate FASTA records with a small cross-platform Python implementation.
 # Empty input produces an empty centroid FASTA so downstream per-gene reporting
