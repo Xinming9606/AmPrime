@@ -17,6 +17,7 @@ rule gene_report:
     params:
         gene  = lambda wc: wc.gene,
         config_file = CONFIG_FILE,
+        download_manifest = str(RESULTS / "genomes" / "download_manifest.tsv"),
         script = str(SCRIPTS_DIR / "gene_report.py")
     log:
         str(RESULTS / "logs" / "gene_report" / "{gene}.log")
@@ -31,6 +32,7 @@ rule gene_report:
             --amplicons-tsv {input.amplicons:q} \
             --diversity-png {input.diversity:q} \
             --alignment-meta {input.alignment_meta:q} \
+            --download-manifest {params.download_manifest:q} \
             --out-html {output:q} \
             --log {log:q}
         """

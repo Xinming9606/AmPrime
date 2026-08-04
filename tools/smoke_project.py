@@ -6,6 +6,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -124,6 +125,29 @@ def check_fasta_io():
     print("FASTA IO ok")
 
 
+def check_batch_gene_extraction():
+    extract_gene = load_script_module("extract_gene")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        cds = tmp / "cds"
+        rna = tmp / "rna"
+        cds.mkdir()
+        rna.mkdir()
+        (cds / "genes.fna").write_text(
+            ">recG_record [gene=recG]\nACGT\n>tuf_record [gene=tuf]\nTGCA\n",
+            encoding="utf-8",
+        )
+        (rna / "genes.fna").write_text(">other [gene=other]\nAAAA\n", encoding="utf-8")
+
+        results = extract_gene.scan_fasta_dirs(
+            [("CDS", cds), ("RNA", rna)],
+            {"recG": {"recg"}, "tuf": {"tuf"}},
+        )
+        assert [seq for _, seq in results["recG"]] == ["ACGT"]
+        assert [seq for _, seq in results["tuf"]] == ["TGCA"]
+    print("batch gene extraction ok")
+
+
 def check_download_manifest():
     download_genomes = load_script_module("download_genomes")
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -147,6 +171,7 @@ def check_download_manifest():
         assert rna.is_dir()
         assert not (genomic / "stale.fna").exists()
         assert not manifest.exists()
+        (genomic / "test.fna").write_text(">test\nACGT\n", encoding="utf-8")
 
         download_genomes.write_manifest(
             manifest,
@@ -157,17 +182,42 @@ def check_download_manifest():
                     "label": "genomic",
                     "format": "fasta",
                     "output_dir": "genomic",
-                    "n_fna": 1,
-                    "total_bytes": 42,
+                    **download_genomes.summarize_fna_dir(genomic),
                 }
             ],
+            config_sha256="config-test",
         )
         with manifest.open(encoding="utf-8") as fh:
             rows = list(csv.DictReader(fh, delimiter="\t"))
         assert rows[0]["genus"] == "Borrelia"
         assert rows[0]["label"] == "genomic"
         assert rows[0]["n_fna"] == "1"
+        assert len(rows[0]["data_fingerprint"]) == 64
+        assert rows[0]["config_sha256"] == "config-test"
     print("download manifest ok")
+
+
+def check_archive_safety():
+    from amprime.api import _safe_extract_tar_gz
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        archive = tmp / "unsafe.tar.gz"
+        destination = tmp / "out"
+        destination.mkdir()
+        with tarfile.open(archive, "w:gz") as tar:
+            link = tarfile.TarInfo("genomes/link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../outside"
+            tar.addfile(link)
+
+        try:
+            _safe_extract_tar_gz(archive, destination)
+        except ValueError as exc:
+            assert "link" in str(exc)
+        else:
+            raise AssertionError("unsafe archive link was not rejected")
+    print("archive safety ok")
 
 
 def check_sequence_cli_steps():
@@ -272,6 +322,9 @@ def check_in_silico_pcr_cli():
         (genome_dir / "genome.fna").write_text(
             ">contig1\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
         )
+        (genome_dir / "genome2.fna").write_text(
+            ">contig1\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
+        )
         subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
@@ -292,6 +345,8 @@ def check_in_silico_pcr_cli():
                 "30",
                 "--top-n",
                 "2",
+                "--workers",
+                "2",
                 "--log",
                 str(log),
             ],
@@ -304,7 +359,8 @@ def check_in_silico_pcr_cli():
         assert [row["primer_id"] for row in rows] == ["p2", "p1"]
         assert rows[0]["validation_rank"] == "1"
         assert rows[0]["input_rank"] == "2"
-        assert rows[0]["n_genomes_amplified"] == "1"
+        assert rows[0]["n_genomes_amplified"] == "2"
+        assert rows[0]["total_genomes"] == "2"
 
         gene_report = load_script_module("gene_report")
         assert (
@@ -412,7 +468,9 @@ def main():
 
     check_config_validation()
     check_fasta_io()
+    check_batch_gene_extraction()
     check_download_manifest()
+    check_archive_safety()
     check_kmer_boundary()
     check_primer_qc_cli()
     check_sequence_cli_steps()

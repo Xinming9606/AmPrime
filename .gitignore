@@ -31,4 +31,5 @@ envs/*/
 test_data/
 run_*.log
 
-data
+data/*
+!data/.gitkeep

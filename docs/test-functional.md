@@ -5,7 +5,7 @@ NCBI.
 
 ## Step 1. Check The Dataset
 
-The archive should exist:
+For the full local test, the archive should exist:
 
 ```text
 data/borrelia-genomes.tar.gz
@@ -20,6 +20,13 @@ genomes/rna/
 ```
 
 Current expected FASTA count: 82 files in each folder.
+
+CI uses a generated one-genome fixture instead, so a clean checkout does not
+need to store the large archive:
+
+```bash
+pixi run functional-test-ci
+```
 
 ## Step 2. Run Through The API
 
@@ -85,7 +92,7 @@ pixi run snakemake --cores 4 --rerun-incomplete results/Borrelia/reports/recG_re
 Expected rules:
 
 ```text
-extract_gene -> cluster -> align -> design_primers -> check_primers -> in_silico_pcr -> gene_report
+extract_genes -> cluster -> align -> design_primers -> check_primers -> in_silico_pcr -> gene_report
 ```
 
 `download_genomes` should not run.

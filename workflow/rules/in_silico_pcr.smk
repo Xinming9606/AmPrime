@@ -11,6 +11,7 @@
 # =============================================================================
 
 rule in_silico_pcr:
+    threads: 4
     input:
         primers    = str(PRIMERS / "{gene}_primers.tsv"),
         genome_dir = str(GENOMES_GENOMIC),
@@ -33,5 +34,6 @@ rule in_silico_pcr:
             --out-tsv {output:q} \
             --gene {params.gene:q} \
             --config {params.config_file:q} \
+            --workers {threads} \
             --log {log:q}
         """

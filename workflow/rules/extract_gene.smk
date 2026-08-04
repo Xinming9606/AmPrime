@@ -1,39 +1,39 @@
 # =============================================================================
 # extract_gene.smk
 #
-# Per-gene rule: extracts target gene sequences from all downloaded CDS and
-# RNA FASTA files, producing a single merged FASTA per gene.
+# Batch rule: extracts all target gene sequences from the downloaded CDS and
+# RNA FASTA files in one pass, producing one merged FASTA per gene.
 #
 # Depends on: rule download_genomes. Genome directories and config are passed
 # to the CLI as plain paths.
 #
-# Output : results/{genus}/extracted/{gene}.fasta   [temp]
+# Output : results/{genus}/extracted/{gene}.fasta   [temp, one per config gene]
 # =============================================================================
 
-rule extract_gene:
+rule extract_genes:
     input:
         cds = str(GENOMES_CDS),
         rna = str(GENOMES_RNA),
         config = CONFIG_FILE
     output:
-        temp(str(EXTRACTED / "{gene}.fasta"))
+        fasta = [temp(str(EXTRACTED / f"{gene}.fasta")) for gene in GENES]
     params:
-        gene = lambda wc: wc.gene,
         config_file = CONFIG_FILE,
         cds_dir = str(GENOMES_CDS),
         rna_dir = str(GENOMES_RNA),
+        out_dir = str(EXTRACTED),
         script = str(SCRIPTS_DIR / "extract_gene.py")
     log:
-        str(RESULTS / "logs" / "extract_gene" / "{gene}.log")
+        str(RESULTS / "logs" / "extract_gene.log")
     benchmark:
-        str(RESULTS / "benchmarks" / "extract_gene" / "{gene}.txt")
+        str(RESULTS / "benchmarks" / "extract_gene.txt")
     shell:
         """
         python {params.script:q} \
             --cds-dir {params.cds_dir:q} \
             --rna-dir {params.rna_dir:q} \
-            --out-fasta {output:q} \
-            --gene {params.gene:q} \
+            --out-dir {params.out_dir:q} \
+            --batch \
             --config {params.config_file:q} \
             --log {log:q}
         """

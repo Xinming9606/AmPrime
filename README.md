@@ -165,7 +165,7 @@ For each gene, outputs are written under `results/<genus>/`.
 | File                            | Contents                                                                          |
 | ------------------------------- | --------------------------------------------------------------------------------- |
 | `reports/<gene>_report.html`    | Main deliverable: recommendation, PCR validation, plot, and candidate table.      |
-| `genomes/download_manifest.tsv` | Download manifest with FASTA counts, sizes, genus, and assembly level.            |
+| `genomes/download_manifest.tsv` | Download manifest with FASTA counts, sizes, config SHA-256, and data fingerprints. |
 | `aligned/<gene>.alignment.tsv`  | Alignment backend metadata, including actual backend used when `auto` is set.     |
 | `primers/<gene>_primers.tsv`    | Filtered candidate primer pairs ranked by score.                                  |
 | `primers/<gene>_amplicons.tsv`  | In silico PCR results for the top validated primer candidates, sorted best first. |
@@ -231,6 +231,10 @@ Snakemake is intentionally kept as a thin scheduler. It manages dependencies, pa
 
 Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Alignment runs write a small metadata TSV next to the alignment, recording the requested backend and the backend actually used. The same alignment summary is included in each HTML report so `alignment_backend: auto` runs remain easy to audit.
 
+Gene extraction is a single batch scan for all configured genes, avoiding a full
+CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker
+processes allocated by Snakemake, while preserving deterministic result sorting.
+
 This keeps each step easy to test and debug. For example:
 
 ```bash
@@ -262,6 +266,7 @@ pixi run dry-run
 pixi run pipeline
 pixi run ci
 pixi run functional-test
+pixi run functional-test-ci
 pixi run source-archive
 pixi run conda-build
 pixi run conda-install-test

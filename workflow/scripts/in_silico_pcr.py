@@ -13,6 +13,7 @@ import logging
 import os
 import sys
 from bisect import bisect_left, bisect_right
+from concurrent.futures import ProcessPoolExecutor
 from time import perf_counter
 
 from common import (
@@ -194,6 +195,9 @@ def parse_args():
     parser.add_argument("--amplicon-min-len", type=int)
     parser.add_argument("--amplicon-max-len", type=int)
     parser.add_argument("--top-n", type=int)
+    parser.add_argument(
+        "--workers", type=int, default=1, help="Genome-scanning worker processes."
+    )
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -250,6 +254,54 @@ def _summarize_candidates(candidates, total_genomes):
     return rows
 
 
+def _scan_genome(task):
+    """Scan one genome in a worker process and return raw candidate hits."""
+    genome, candidate_specs, mismatch, valid_lo, valid_hi = task
+    genome_bp = 0
+    genome_contigs = 0
+    per_candidate_hits = [[] for _ in candidate_specs]
+    for _, sequence in parse_fasta(genome):
+        sequence = sequence.upper()
+        genome_bp += len(sequence)
+        genome_contigs += 1
+        strands = (sequence, reverse_complement(sequence))
+        for idx, (fwd, rev) in enumerate(candidate_specs):
+            per_candidate_hits[idx].extend(
+                amplicon_lengths_for_strands(
+                    strands, fwd, rev, mismatch, valid_lo, valid_hi
+                )
+            )
+    return os.path.basename(genome), genome_bp, genome_contigs, per_candidate_hits
+
+
+def _record_genome_result(scan_result, candidates):
+    genome_id, genome_bp, genome_contigs, per_candidate_hits = scan_result
+    amplified_here = 0
+    for candidate, lengths in zip(candidates, per_candidate_hits, strict=False):
+        if not lengths:
+            continue
+        amplified_here += 1
+        candidate["amplified_genomes"] += 1
+        candidate["amplicon_lengths"].extend(lengths)
+
+    if amplified_here:
+        log.info(
+            "  %s : amplified by %d pair(s); scanned %d contig(s), %d bp",
+            genome_id,
+            amplified_here,
+            genome_contigs,
+            genome_bp,
+        )
+    else:
+        log.info(
+            "  %s : no amplification; scanned %d contig(s), %d bp",
+            genome_id,
+            genome_contigs,
+            genome_bp,
+        )
+    return genome_bp, genome_contigs
+
+
 def main():
     args = parse_args()
     configure_logging(args.log)
@@ -268,6 +320,8 @@ def main():
     top_n = _required_param("pcr_top_n", _param(args.top_n, cfg, "pcr_top_n"))
     if top_n < 1:
         raise SystemExit("pcr_top_n must be a positive integer")
+    if args.workers < 1:
+        raise SystemExit("workers must be a positive integer")
 
     len_margin = 100
     valid_lo = max(0, amplicon_min_len - len_margin)
@@ -278,6 +332,7 @@ def main():
     log.info("Genome dir  : %s", args.genome_dir)
     log.info("Mismatch    : %d", mismatch)
     log.info("Top N       : %d", top_n)
+    log.info("Workers     : %d", args.workers)
 
     with open(args.primers_tsv, encoding="utf-8") as fh:
         reader = csv.DictReader(fh, delimiter="\t")
@@ -310,64 +365,31 @@ def main():
         write_summary([], args.out_tsv)
         return 1
 
-    total_bp_scanned = 0
-    total_contigs = 0
-    warned_total_bp = False
-    for genome in genomes:
-        genome_id = os.path.basename(genome)
-        genome_bp = 0
-        genome_contigs = 0
-        per_candidate_hits = [[] for _ in candidates]
-        for _, sequence in parse_fasta(genome):
-            sequence = sequence.upper()
-            genome_bp += len(sequence)
-            genome_contigs += 1
-            strands = (sequence, reverse_complement(sequence))
-            for idx, candidate in enumerate(candidates):
-                per_candidate_hits[idx].extend(
-                    amplicon_lengths_for_strands(
-                        strands,
-                        candidate["fwd"],
-                        candidate["rev"],
-                        mismatch,
-                        valid_lo,
-                        valid_hi,
-                    )
-                )
+    candidate_specs = [(candidate["fwd"], candidate["rev"]) for candidate in candidates]
+    tasks = [
+        (genome, candidate_specs, mismatch, valid_lo, valid_hi) for genome in genomes
+    ]
+    workers = min(args.workers, total_genomes)
+    log.info("Scanning genomes with %d worker process(es)", workers)
+    if workers > 1:
+        with ProcessPoolExecutor(max_workers=workers) as executor:
+            scan_results = executor.map(_scan_genome, tasks)
+            totals = [
+                _record_genome_result(result, candidates) for result in scan_results
+            ]
+    else:
+        totals = [
+            _record_genome_result(_scan_genome(task), candidates) for task in tasks
+        ]
 
-        total_bp_scanned += genome_bp
-        total_contigs += genome_contigs
-        amplified_here = 0
-        for candidate, lengths in zip(candidates, per_candidate_hits, strict=False):
-            if not lengths:
-                continue
-            amplified_here += 1
-            candidate["amplified_genomes"] += 1
-            candidate["amplicon_lengths"].extend(lengths)
-
-        if amplified_here:
-            log.info(
-                "  %s : amplified by %d pair(s); scanned %d contig(s), %d bp",
-                genome_id,
-                amplified_here,
-                genome_contigs,
-                genome_bp,
-            )
-        else:
-            log.info(
-                "  %s : no amplification; scanned %d contig(s), %d bp",
-                genome_id,
-                genome_contigs,
-                genome_bp,
-            )
-
-        if not warned_total_bp and total_bp_scanned > WARN_TOTAL_GENOME_BP:
-            log.warning(
-                "PCR scan has exceeded %d bp. Consider stricter assembly_level "
-                "or a smaller pcr_top_n for faster batch runs.",
-                WARN_TOTAL_GENOME_BP,
-            )
-            warned_total_bp = True
+    total_bp_scanned = sum(bp for bp, _ in totals)
+    total_contigs = sum(contigs for _, contigs in totals)
+    if total_bp_scanned > WARN_TOTAL_GENOME_BP:
+        log.warning(
+            "PCR scan has exceeded %d bp. Consider stricter assembly_level "
+            "or a smaller pcr_top_n for faster batch runs.",
+            WARN_TOTAL_GENOME_BP,
+        )
 
     rows = _summarize_candidates(candidates, total_genomes)
     best = rows[0]

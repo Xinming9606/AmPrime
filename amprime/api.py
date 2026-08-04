@@ -14,8 +14,11 @@ import shutil
 import subprocess
 import tarfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from importlib import resources
 from pathlib import Path
+
+from .provenance import fasta_directory_summary, sha256_file
 
 DEFAULT_GENUS = "Borrelia"
 DEFAULT_GENE = "recG"
@@ -78,12 +81,66 @@ def _safe_extract_tar_gz(archive: Path, destination: Path) -> None:
     destination = destination.resolve()
     with tarfile.open(archive, "r:gz") as tar:
         for member in tar.getmembers():
+            if member.issym() or member.islnk():
+                raise ValueError(
+                    f"Refusing to extract link from archive: {member.name}"
+                )
+            if not (member.isdir() or member.isfile()):
+                raise ValueError(
+                    f"Refusing to extract special archive member: {member.name}"
+                )
             target = (destination / member.name).resolve()
             if target != destination and destination not in target.parents:
                 raise ValueError(
                     f"Refusing to extract unsafe archive member: {member.name}"
                 )
-        tar.extractall(destination)
+        tar.extractall(destination, filter="data")
+
+
+def _write_local_manifest(genomes_dir: Path, genus: str, config: Path) -> None:
+    generated_at = datetime.now(UTC).isoformat(timespec="seconds")
+    rows = []
+    for label, fmt in [
+        ("genomic", "fasta"),
+        ("cds", "cds-fasta"),
+        ("rna", "rna-fasta"),
+    ]:
+        directory = genomes_dir / label
+        rows.append(
+            {
+                "label": label,
+                "format": fmt,
+                "output_dir": str(directory),
+                **fasta_directory_summary(directory),
+            }
+        )
+
+    manifest = genomes_dir / "download_manifest.tsv"
+    fieldnames = [
+        "generated_at",
+        "genus",
+        "assembly_level",
+        "label",
+        "format",
+        "output_dir",
+        "n_fna",
+        "total_bytes",
+        "data_fingerprint",
+        "config_sha256",
+    ]
+    with manifest.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "generated_at": generated_at,
+                    "genus": genus,
+                    "assembly_level": "local-archive",
+                    "config_sha256": sha256_file(config),
+                    **row,
+                }
+            )
 
 
 def _as_snakemake_target(path: str | Path | None, root: Path) -> str | None:
@@ -155,17 +212,21 @@ class AmPrimeProject:
         if not archive_path.is_file():
             raise FileNotFoundError(f"Cannot find test dataset archive: {archive_path}")
 
+        config_path = self.ensure_default_config()
         output_dir = self.result_dir(genus)
         output_dir.mkdir(parents=True, exist_ok=True)
+        genomes_dir = output_dir / "genomes"
+        if genomes_dir.exists():
+            shutil.rmtree(genomes_dir)
         _safe_extract_tar_gz(archive_path, output_dir)
 
-        genomes_dir = output_dir / "genomes"
         for name in ["genomic", "cds", "rna"]:
             folder = genomes_dir / name
             if not folder.is_dir():
                 raise FileNotFoundError(f"Dataset is missing {folder}")
             if not list(folder.glob("*.fna")):
                 raise FileNotFoundError(f"Dataset has no FASTA files in {folder}")
+        _write_local_manifest(genomes_dir, genus, config_path)
         return genomes_dir
 
     def run_pipeline(
@@ -244,6 +305,8 @@ class AmPrimeProject:
         html = paths.report_html.read_text(encoding="utf-8")
         if "Alignment" not in html:
             raise AssertionError("Report is missing the alignment metadata section")
+        if "Provenance" not in html or "Config SHA-256" not in html:
+            raise AssertionError("Report is missing provenance fingerprints")
         if expect_no_candidates:
             if primer_rows or pcr_rows:
                 raise AssertionError("Expected no primer/PCR rows for this dataset")
@@ -275,7 +338,18 @@ class AmPrimeProject:
             target=target,
             cores=cores,
             rerun_incomplete=True,
-            extra_args=["--omit-from", "download_genomes"],
+            extra_args=[
+                "--rerun-triggers",
+                "mtime",
+                "--forcerun",
+                "extract_genes",
+                "cluster",
+                "align",
+                "design_primers",
+                "check_primers",
+                "in_silico_pcr",
+                "gene_report",
+            ],
         )
         return self.verify_result_outputs(
             genus=genus, gene=gene, expect_no_candidates=True

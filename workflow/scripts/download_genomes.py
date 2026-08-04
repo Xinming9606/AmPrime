@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
-from common import configure_logging
+from common import configure_logging, fasta_directory_summary, sha256_file
 from config_schema import load_config_file
 
 log = logging.getLogger(__name__)
@@ -79,14 +79,10 @@ def decompress_gzip_files(*directories):
 
 
 def summarize_fna_dir(directory):
-    paths = list(Path(directory).rglob("*.fna"))
-    return {
-        "n_fna": len(paths),
-        "total_bytes": sum(path.stat().st_size for path in paths),
-    }
+    return fasta_directory_summary(directory)
 
 
-def write_manifest(path, genus, assembly_level, rows):
+def write_manifest(path, genus, assembly_level, rows, config_sha256=""):
     if not path:
         return
 
@@ -102,6 +98,8 @@ def write_manifest(path, genus, assembly_level, rows):
         "output_dir",
         "n_fna",
         "total_bytes",
+        "data_fingerprint",
+        "config_sha256",
     ]
     with manifest_path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
@@ -112,6 +110,7 @@ def write_manifest(path, genus, assembly_level, rows):
                     "generated_at": generated_at,
                     "genus": genus,
                     "assembly_level": assembly_level,
+                    "config_sha256": config_sha256,
                     **row,
                 }
             )
@@ -136,6 +135,7 @@ def main():
     started = perf_counter()
 
     cfg = load_config_file(args.config) if args.config else {}
+    config_sha256 = sha256_file(args.config) if args.config else ""
     genus = args.genus or cfg.get("genus")
     assembly_level = args.assembly_level or cfg.get("assembly_level")
     if not genus:
@@ -163,7 +163,13 @@ def main():
         manifest_rows.append(
             {"label": label, "format": fmt, "output_dir": out_dir, **summary}
         )
-    write_manifest(args.manifest, genus, assembly_level, manifest_rows)
+    write_manifest(
+        args.manifest,
+        genus,
+        assembly_level,
+        manifest_rows,
+        config_sha256=config_sha256,
+    )
 
     n_gen = manifest_rows[0]["n_fna"]
     n_cds = manifest_rows[1]["n_fna"]
