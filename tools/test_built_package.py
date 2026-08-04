@@ -89,6 +89,20 @@ def assert_installed_package(channel_url: str, keep_tmp: bool) -> Path:
         run(["pixi", "run", "amprime", "--help"], cwd=project)
         run(["pixi", "run", "python", "-c", install_assertion_code()], cwd=project)
         run(["pixi", "run", "amprime", "run", "--dry-run"], cwd=project)
+        test_data = project / "data" / "borrelia-genomes.tar.gz"
+        test_data.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / "data" / "borrelia-genomes.tar.gz", test_data)
+        run(
+            [
+                "pixi",
+                "run",
+                "amprime",
+                "functional-test",
+                "--archive",
+                str(test_data),
+            ],
+            cwd=project,
+        )
         print(f"clean install test ok: {PACKAGE_NAME} from {channel_url}")
         return project
     finally:

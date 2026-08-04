@@ -11,6 +11,9 @@
 # =============================================================================
 
 rule gene_extract:
+    threads: 1
+    resources:
+        mem_mb=2048
     input:
         cds = str(GENOMES_CDS),
         rna = str(GENOMES_RNA),

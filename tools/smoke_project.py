@@ -84,6 +84,9 @@ def check_kmer_boundary():
     )
     assert len(kmers) == 1
     assert kmers[0]["degen"] == "ACGT"
+    entropy = primers_design._shannon(np.array(list("aac-")), 4)
+    expected_entropy = -(2 / 3 * np.log(2 / 3) + 1 / 3 * np.log(1 / 3))
+    assert np.isclose(entropy, expected_entropy)
     print("kmer boundary ok")
 
 
@@ -228,25 +231,7 @@ def check_archive_safety():
 
 
 def check_sequence_cli_steps():
-    fasta_cluster = load_script_module("fasta_cluster")
-    fasta_align = load_script_module("fasta_align")
     fasta_io = load_script_module("fasta_io")
-
-    assert fasta_cluster.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
-    assert fasta_align.choose_backend("python") == "python"
-    exact_deduped = fasta_cluster.cluster_records(
-        [(">a", "ACGT"), (">b", "acgt")], 0.97
-    )
-    assert len(exact_deduped) == 1
-    assert fasta_align.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
-        (">a", "ACGT"),
-        (">b", "TGCA"),
-    ]
-    unequal_aligned = fasta_align.center_star_align(
-        [(">a", "ACGTACGT"), (">b", "ACGTTACGT"), (">c", "ACGTACG")]
-    )
-    assert len({len(seq) for _, seq in unequal_aligned}) == 1
-    assert any("-" in seq for _, seq in unequal_aligned)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
@@ -289,8 +274,6 @@ def check_sequence_cli_steps():
                 str(aligned),
                 "--metadata",
                 str(alignment_meta),
-                "--backend",
-                "auto",
                 "--log",
                 str(align_log),
             ],
@@ -302,8 +285,8 @@ def check_sequence_cli_steps():
         assert len(aligned_lengths) == 1
         with alignment_meta.open(encoding="utf-8") as fh:
             metadata_rows = list(csv.DictReader(fh, delimiter="\t"))
-        assert metadata_rows[0]["requested_backend"] == "auto"
-        assert metadata_rows[0]["backend_used"] in {"python", "mafft", "muscle"}
+        assert metadata_rows[0]["requested_backend"] == "muscle"
+        assert metadata_rows[0]["backend_used"] == "muscle"
     print("cluster and align cli ok")
 
 
@@ -509,6 +492,15 @@ def check_amprime_api():
     assert result.returncode == 0
     assert result.command[0] == "snakemake"
     assert "-n" in result.command
+
+    invalid_components = [("../escape", "recG"), ("Borrelia", r"..\escape")]
+    for invalid_genus, invalid_gene in invalid_components:
+        try:
+            project.result_paths(invalid_genus, invalid_gene)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe API path component was accepted")
     print("amprime api ok")
 
 

@@ -18,6 +18,9 @@
 
 
 rule genomes_download:
+    threads: 1
+    resources:
+        mem_mb=1024
     input:
         config = CONFIG_FILE
     output:

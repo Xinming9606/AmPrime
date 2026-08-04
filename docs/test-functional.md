@@ -9,6 +9,7 @@ For the full local test, the archive should exist:
 
 ```text
 data/borrelia-genomes.tar.gz
+data/borrelia-genomes.tar.gz.json
 ```
 
 It should contain:
@@ -19,14 +20,27 @@ genomes/cds/
 genomes/rna/
 ```
 
-Current expected FASTA count: 82 files in each folder.
+Reference snapshot: the Borrelia NCBI download used when this guide was
+validated contained 82 FASTA files in each folder. The archive is generated on
+demand, is not committed to the repository, and may change as NCBI data
+changes. The counts below are therefore snapshot expectations, not permanent
+invariants.
 
-The CI workflow caches this archive by OS and configuration. On a cache miss,
-GitHub Actions downloads it from NCBI before running the test:
+The JSON sidecar records the archive checksum and data snapshot identifier. The
+CI workflow caches both files using an explicit dataset version. On a cache
+miss, GitHub Actions downloads the archive from NCBI before running the test;
+the version must be bumped when the reference snapshot is intentionally
+refreshed:
 
 ```bash
 pixi run download-ci-test-data
 pixi run ci
+```
+
+To verify an existing archive without running the workflow:
+
+```bash
+pixi run verify-ci-test-data
 ```
 
 `functional-test-ci` only consumes an archive that has already been prepared;
@@ -56,11 +70,13 @@ After installing the conda package, use:
 amprime functional-test
 ```
 
-Expected output ends with:
+The functional test checks that the workflow and reports complete. Candidate
+counts are reported for inspection but are not fixed, because CI may download
+a newer NCBI dataset:
 
 ```text
 functional test ok
-primer_rows=0 pcr_rows=0 backend=python report_bytes=<positive integer>
+primer_rows=<non-negative integer> pcr_rows=<non-negative integer> backend=muscle report_bytes=<positive integer>
 ```
 
 ## Step 3. Use The Python API
@@ -94,7 +110,9 @@ tar -xzf data/borrelia-genomes.tar.gz -C results/Borrelia
 ```
 
 ```bash
-pixi run snakemake --cores 4 --rerun-incomplete results/Borrelia/reports/recG_report.html
+pixi run snakemake --cores 4 --rerun-incomplete \
+  results/Borrelia/reports/recG_report.html \
+  results/Borrelia/reports/gene_report_cross.html
 ```
 
 Expected rules:
@@ -108,27 +126,29 @@ gene_extract -> cluster -> align -> primers_design -> primers_check -> in_silico
 ## Step 5. Verify Outputs Manually
 
 ```bash
-pixi run python -m amprime verify --genus Borrelia --gene recG --expect-no-candidates
+pixi run python -m amprime verify --genus Borrelia --gene recG
 ```
 
-Expected output:
+For the reference snapshot only, add `--expect-no-candidates` to turn the
+no-candidate result into an explicit snapshot assertion:
 
-```text
-functional test ok
-primer_rows=0 pcr_rows=0 backend=python report_bytes=<positive integer>
+```bash
+pixi run python -m amprime verify --genus Borrelia --gene recG --expect-no-candidates
 ```
 
 ## Step 6. Interpret The Result
 
-With the default config, this dataset is expected to complete successfully but
-produce no primer candidates:
+For the reference snapshot and default config, the diagnostic result is
+expected to contain no primer candidates:
 
 - `gene_extract` finds 82 `recG` CDS hits.
 - `cluster` reduces them to 12 centroids.
-- `align` uses the Python backend.
+- `align` uses MUSCLE.
 - `gene_report` writes a complete no-candidate report.
 
-This is a passing test. Synthetic positive primer/PCR behavior is covered by:
+These counts and the no-candidate result are not guaranteed for a fresh NCBI
+download. The CI functional test intentionally does not assert them. Synthetic
+positive primer/PCR behavior is covered by:
 
 ```bash
 pixi run smoke

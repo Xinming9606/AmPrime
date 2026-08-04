@@ -21,9 +21,11 @@ dependencies:
   # reporting
   - markdown
 
+  # VSEARCH and MUSCLE are selected on Unix platforms. Windows installs them
+  # through Scoop when the workflow runs.
+  - vsearch  # [unix]
+  - muscle  # [unix]
+
   # development checks
   - ruff
-
-  # Optional alignment backends are intentionally not installed by default.
-  # Set alignment_backend: mafft/muscle/auto only after installing that aligner
-  # separately on your platform.
+  - pyrefly=1.2

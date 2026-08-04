@@ -15,6 +15,7 @@
 #   snakemake --cores 4
 # ============================================================================
 
+import os
 import sys
 from pathlib import Path
 
@@ -54,13 +55,12 @@ sys.path.insert(0, str(SCRIPTS_DIR))
 
 from config_schema import apply_config_defaults, validate_config
 
-configfile: "config/config.yaml"
+CONFIG_FILE = os.environ.get("AMPRIME_CONFIG_FILE", "config/config.yaml")
+configfile: CONFIG_FILE
 
 
 config.update(apply_config_defaults(config))
 validate_config(config)
-
-CONFIG_FILE = "config/config.yaml"
 
 wildcard_constraints:
     gene = r"[^./]+"

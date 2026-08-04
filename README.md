@@ -7,8 +7,7 @@
 ![Platforms](https://img.shields.io/badge/platforms-linux--64%20%7C%20osx--arm64%20%7C%20win--64-2ea44f)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-AmPrime designs and validates amplicon-sequencing primer pairs for bacterial
-housekeeping genes using public NCBI genomes.
+AmPrime designs and validates amplicon-sequencing primer pairs for bacterial housekeeping genes using public NCBI genomes.
 
 You give it:
 
@@ -29,7 +28,7 @@ For each gene independently, AmPrime runs this pipeline:
 
 ```mermaid
 flowchart TD
-    CFG[config.yaml<br/>genus + genes + backend]
+    CFG[config.yaml<br/>genus + genes]
 
     subgraph S1[Genome Inputs]
         direction LR
@@ -62,11 +61,10 @@ The main idea is simple:
 1. Download genomic, CDS, and RNA FASTA files for the target genus.
 2. Extract the target gene from CDS/RNA annotations.
 3. Dereplicate near-identical sequences so redundant strains do not dominate.
-4. Align representative sequences with the configured alignment backend.
+4. Align representative sequences with MUSCLE.
 5. Find conserved primer windows that flank a variable amplicon region.
 6. Filter primer pairs for simple secondary-structure risks.
-7. Validate the best QC-passed candidates against full genomes with the
-   Python primer scanner.
+7. Validate the best QC-passed candidates against full genomes with the Python primer scanner.
 8. Write a browsable HTML report.
 
 Missing genes are handled gracefully. If a gene cannot be found, the pipeline continues and writes a report showing that no candidates were available.
@@ -113,8 +111,6 @@ genes:
   - uvrA
 
 assembly_level: complete
-alignment_backend: python
-
 primer_len: 20
 amplicon_min_len: 300
 amplicon_max_len: 1000
@@ -132,7 +128,6 @@ Useful options:
 | `genus`                                | Bacterial genus name recognized by NCBI.                                                        |
 | `genes`                                | One or more gene names. Each gene is processed independently.                                   |
 | `assembly_level`                       | NCBI assembly level: `complete`, `chromosome`, `scaffold`, or `contig`.                         |
-| `alignment_backend`                    | Alignment backend: `python`, `auto`, `mafft`, or `muscle`.                                      |
 | `primer_len`                           | Primer length in bp.                                                                            |
 | `amplicon_min_len`, `amplicon_max_len` | Target amplicon size range.                                                                     |
 | `div_cut`                              | Maximum Shannon entropy allowed for conserved primer windows. Raise it if no primers are found. |
@@ -167,7 +162,7 @@ For each gene, outputs are written under `results/<genus>/`.
 | `reports/<gene>_report.html`         | Main deliverable: recommendation, PCR/species validation, plot, and candidates.      |
 | `reports/gene_report_cross.html`     | Cross-gene comparison of amplification and species-level metrics.                    |
 | `genomes/download_manifest.tsv`      | Download manifest with FASTA counts, sizes, config SHA-256, and data fingerprints.   |
-| `aligned/<gene>.alignment.tsv`       | Alignment backend metadata, including actual backend used when `auto` is set.        |
+| `aligned/<gene>.alignment.tsv`       | MUSCLE version and alignment metadata.                                                  |
 | `primers/<gene>_primers.tsv`         | Filtered candidate primer pairs ranked by score.                                     |
 | `primers/<gene>_amplicons.tsv`       | In silico PCR results for the top validated primer candidates, sorted best first.    |
 | `primers/<gene>_species_summary.tsv` | Species-level amplification, allele multiplicity, and inter-species overlap metrics. |
@@ -192,6 +187,7 @@ AmPrime/
 |   |-- compile_project.py
 |   |-- check_metadata.py
 |   |-- download_test_dataset.py
+|   |-- verify_test_dataset.py
 |   |-- smoke_project.py
 |   |-- test_built_package.py
 |   `-- package_release.py
@@ -200,6 +196,7 @@ AmPrime/
 |   |-- cli.py
 |   `-- __main__.py
 |-- docs/
+|   |-- paper.md
 |   `-- test-functional.md
 |-- workflow/
 |   |-- Snakefile
@@ -236,11 +233,9 @@ AmPrime/
 
 Snakemake is intentionally kept as a thin scheduler. It manages dependencies, parallel execution, logs, benchmarks, and resumability. The actual work is done by standalone Python command-line tools in `workflow/scripts/`.
 
-Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Alignment runs write a small metadata TSV next to the alignment, recording the requested backend and the backend actually used. The same alignment summary is included in each HTML report so `alignment_backend: auto` runs remain easy to audit.
+Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Clustering always uses VSEARCH at 97% identity, and representative sequences are aligned with MUSCLE. Alignment runs write a small metadata TSV next to the alignment, recording the MUSCLE executable and version. The same alignment summary is included in each HTML report so runs remain easy to audit.
 
-Gene extraction is a single batch scan for all configured genes, avoiding a full
-CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker
-processes allocated by Snakemake, while preserving deterministic result sorting.
+Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker processes allocated by Snakemake, while preserving deterministic result sorting. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The Python sequence algorithms still need benchmarking before very large genera are processed.
 
 This keeps each step easy to test and debug. For example:
 
@@ -252,14 +247,7 @@ python workflow/scripts/gene_report.py --help
 
 ## Development
 
-Pixi is the primary project manager. It creates the conda/bioconda environment
-from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`.
-The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows.
-Intel macOS is not supported. Sequence processing defaults to Python so the
-workflow does not depend on platform-specific `vsearch`, `MUSCLE`, `MAFFT`, or
-`seqkit` binaries. For stricter multiple sequence alignment, set
-`alignment_backend: auto`, `mafft`, or `muscle` after installing that aligner on
-your platform.
+Pixi is the primary project manager. It creates the conda/bioconda environment from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`. The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows. Intel macOS is not supported. Pixi installs VSEARCH and MUSCLE automatically on Ubuntu and Apple Silicon macOS. On Windows, the workflow checks for both executables and installs missing tools with Scoop when Scoop is available.
 
 Useful commands:
 
@@ -268,6 +256,7 @@ pixi run compile
 pixi run metadata-check
 pixi run lint
 pixi run format-check
+pixi run pyrefly-check
 pixi run smoke
 pixi run dry-run
 pixi run pipeline
@@ -281,7 +270,7 @@ pixi run conda-install-test
 
 - `source-archive` writes source `.zip` and `.tar.gz` archives under `dist/`.
 - `conda-build` writes a local conda package under `dist/conda/`.
-- `conda-install-test` builds `amprime`, publishes it to an indexed local conda channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer project, checks the `amprime` command, verifies the bundled config/workflow resources, and runs a Snakemake dry run from the installed package.
+- `conda-install-test` builds `amprime`, publishes it to an indexed local conda channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer project, checks the `amprime` command, verifies the bundled config/workflow resources, runs a Snakemake dry run, and executes the functional test against the repository fixture.
 - `metadata-check` keeps mirrored project metadata honest: package names and versions must match across `pixi.toml` and `pyproject.toml`, conda runtime dependencies must stay in `pixi.toml`, and the legacy `environment.yaml` must mirror the default Pixi environment.
 
 For the end-to-end Borrelia functional test, including CI dataset download, see
@@ -301,14 +290,10 @@ After installing the conda package, the same API is exposed as the `amprime` com
 
 ```bash
 amprime functional-test
-amprime verify --genus Borrelia --gene recG --expect-no-candidates
+amprime verify --genus Borrelia --gene recG
 ```
 
-The GitHub Actions workflow downloads and caches the Borrelia test archive
-before running `pixi run ci`; local `pixi run ci` does not access NCBI. Pushing a tag
-like `v0.1.0` runs the release workflow, verifies a clean conda-package install,
-builds source archives plus a conda package under `dist/`, uploads them as
-workflow artifacts, and attaches them to the GitHub Release.
+The GitHub Actions workflow downloads and caches the Borrelia test archive before running `pixi run ci`; the archive is paired with a SHA-256 sidecar and an explicit cache snapshot version. Bump that version in the workflow when refreshing the reference dataset. Local `pixi run ci` does not access NCBI. Pushing a tag like `v0.1.0` runs the release workflow, verifies a clean conda-package install, builds source archives plus a conda package under `dist/`, uploads them as workflow artifacts, and attaches them to the GitHub Release.
 
 ## Troubleshooting
 
@@ -328,9 +313,24 @@ If no primers are found, try one or more of the following:
 
 If genome download fails, confirm that the genus name is recognized by NCBI and that your internet connection is available.
 
+On Ubuntu and Apple Silicon macOS, `pixi install` supplies VSEARCH and MUSCLE.
+Check them with:
+
+```bash
+vsearch --version
+muscle --version
+```
+
+On Windows, VSEARCH and MUSCLE are required. Each workflow step first checks
+for its executable, then checks for Scoop and installs the missing tool with
+`scoop install vsearch` or `scoop install muscle`. If Scoop is not installed,
+install it first using the instructions below.
+
+If the test dataset check reports a checksum mismatch, remove the archive and its `.json` sidecar, then regenerate them together with `pixi run download-ci-test-data`.
+
 If a batch run is slow, inspect the per-step logs and benchmarks under `results/<genus>/logs/` and `results/<genus>/benchmarks/`. The Python sequence steps log input sequence counts, centroid counts, scanned genome bases, and elapsed time. Start with a stricter assembly level such as `complete`, a smaller gene set, or a lower `pcr_top_n` when first testing a large genus.
 
-If you use `alignment_backend: auto`, check the report or `results/<genus>/aligned/<gene>.alignment.tsv` to see whether the run used Python, MAFFT, or MUSCLE. For final reproducible runs, set the backend explicitly.
+Check the report or `results/<genus>/aligned/<gene>.alignment.tsv` to see the MUSCLE executable and version used for alignment.
 
 ## Requirements
 
@@ -360,14 +360,24 @@ That environment file lives at:
 workflow/envs/environment.yaml
 ```
 
-Both dependency files include the same default runtime: Snakemake, Python 3.12, Biopython, NumPy, Matplotlib, `ncbi-genome-download`, PyYAML, and Python `markdown`. Optional MAFFT/MUSCLE alignment backends are not installed by default; install one separately before selecting it with `alignment_backend`.
+Both dependency files include the same default runtime: Snakemake, Python 3.12, Biopython, NumPy, Matplotlib, `ncbi-genome-download`, PyYAML, Python `markdown`, VSEARCH, and MUSCLE. Pixi installs both tools on Linux and Apple Silicon macOS; Windows installs them through Scoop when the workflow runs.
+
+### Windows command-line tools
+
+On Windows, AmPrime requires VSEARCH and MUSCLE. Install Scoop first, then run:
+
+```powershell
+scoop bucket add main-plus https://github.com/Scoopforge/Main-Plus
+scoop install vsearch muscle
+```
 
 ## Limitations
 
 - Off-target specificity outside the target genus is not checked yet.
-- Primer windows are derived from the alignment consensus.
-- The default Python alignment backend is a cross-platform first-pass fallback;
-  use MAFFT or MUSCLE for higher-quality multiple sequence alignment when available.
+- Primer sequences use a majority-rule consensus and IUPAC representation;
+  Shannon entropy is calculated independently from the observed A/C/G/T bases
+  in each alignment column.
+- MUSCLE is required for multiple sequence alignment.
 - Degenerate-base handling is conservative.
 - Very large genera can take a long time to download, align, and scan in Python.
 

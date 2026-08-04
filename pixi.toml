@@ -9,8 +9,8 @@ preview = ["pixi-build"]
 
 [dependencies]
 # Default dependencies are intentionally cross-platform across Linux,
-# Apple Silicon macOS, and Windows. Optional alignment backends such as
-# MAFFT/MUSCLE can be installed separately and selected with alignment_backend.
+# Apple Silicon macOS, and Windows. MUSCLE and VSEARCH are installed on Unix;
+# Windows installs them through Scoop when the workflow runs.
 python = "3.12.*"
 snakemake-minimal = ">=8"
 biopython = "*"
@@ -20,26 +20,41 @@ pyyaml = "*"
 ncbi-genome-download = "*"
 markdown = "*"
 ruff = "*"
+pyrefly = "1.2.*"
+
+# VSEARCH is installed automatically on the supported Unix platforms. Windows
+# installs it through Scoop when the clustering step runs.
+[target.linux-64.dependencies]
+vsearch = "2.30.*"
+muscle = "*"
+
+[target.osx-arm64.dependencies]
+vsearch = "2.30.*"
+muscle = "*"
 
 [tasks]
 compile = "python tools/compile_project.py"
 metadata-check = "python tools/check_metadata.py"
 lint = "ruff check workflow/scripts tools amprime"
 format-check = "ruff format --check workflow/scripts tools amprime"
+pyrefly-check = "pyrefly check"
 smoke = "python tools/smoke_project.py"
-dry-run = "snakemake -n --shared-fs-usage input-output persistence software-deployment sources"
-pipeline = "snakemake --cores 4 --shared-fs-usage input-output persistence software-deployment sources"
+dry-run = "snakemake --snakefile Snakefile -n all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources"
+pipeline = "snakemake --snakefile Snakefile --cores 4 all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources"
 ci = { depends-on = [
   "compile",
   "metadata-check",
   "lint",
   "format-check",
+  "pyrefly-check",
   "smoke",
   "dry-run",
+  "verify-ci-test-data",
   "functional-test-ci"
 ] }
 functional-test = "python -m amprime functional-test"
 download-ci-test-data = "python tools/download_test_dataset.py --output data/borrelia-genomes.tar.gz"
+verify-ci-test-data = "python tools/verify_test_dataset.py --archive data/borrelia-genomes.tar.gz"
 functional-test-ci = "python -m amprime functional-test --archive data/borrelia-genomes.tar.gz"
 source-archive = "python tools/package_release.py"
 conda-build = "pixi publish --path . --target-dir dist/conda --force"
@@ -77,3 +92,11 @@ matplotlib-base = "*"
 pyyaml = "*"
 ncbi-genome-download = "*"
 markdown = "*"
+
+[package.run-dependencies."if(host_platform == 'linux-64')"]
+vsearch = ">=2.30,<2.32"
+muscle = "*"
+
+[package.run-dependencies."if(host_platform == 'osx-arm64')"]
+vsearch = ">=2.30,<2.32"
+muscle = "*"

@@ -1,8 +1,7 @@
 # =============================================================================
 # cluster.smk
 #
-# Per-gene rule: dereplicates near-identical sequences with a Python greedy
-# centroid clusterer at 97% identity, keeping one centroid per cluster.
+# Per-gene rule: dereplicates near-identical sequences with VSEARCH.
 # This reduces redundancy before alignment.
 #
 # Input  : results/{genus}/extracted/{gene}.fasta            [temp, from gene_extract]
@@ -13,6 +12,9 @@
 # =============================================================================
 
 rule cluster:
+    threads: 1
+    resources:
+        mem_mb=4096
     input:
         fasta = str(EXTRACTED / "{gene}.fasta"),
         config = CONFIG_FILE

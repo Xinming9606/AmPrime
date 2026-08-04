@@ -88,10 +88,18 @@ def _iupac_encode(bases: str) -> str:
     return _IUPAC_MAP.get(key, "N")
 
 
-def _shannon(col, n_seqs: int) -> float:
-    """Shannon entropy of a single alignment column."""
-    _, counts = np.unique(col, return_counts=True)
-    probs = counts / n_seqs
+def _shannon(col, n_seqs: int | None = None) -> float:
+    """Shannon entropy of the observed A/C/G/T bases in one column.
+
+    Gaps and unknown bases are missing observations, not additional bases in
+    the distribution.  The optional ``n_seqs`` argument remains accepted for
+    compatibility with callers of the former implementation.
+    """
+    observed = col[np.isin(col, ["a", "c", "g", "t"])]
+    if len(observed) == 0:
+        return 0.0
+    _, counts = np.unique(observed, return_counts=True)
+    probs = counts / len(observed)
     probs = probs[probs > 0]
     return float(-np.sum(probs * np.log(probs)))
 
@@ -363,7 +371,11 @@ def main():
     if args.div_cut is not None:
         div_cut = args.div_cut
     elif args.gene:
-        div_cut = cfg.get("div_cut_per_gene", {}).get(args.gene, cfg.get("div_cut"))
+        div_overrides = cfg.get("div_cut_per_gene", {})
+        if isinstance(div_overrides, dict):
+            div_cut = div_overrides.get(args.gene, cfg.get("div_cut"))
+        else:
+            div_cut = cfg.get("div_cut")
     else:
         div_cut = cfg.get("div_cut")
     div_cut = _required_param("div_cut", div_cut)

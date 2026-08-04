@@ -2,9 +2,9 @@
 # =============================================================================
 # fasta_align.py
 #
-# Align centroid FASTA records. The default backend is a small cross-platform
-# Python center-star aligner; optional MAFFT/MUSCLE backends can be used when
-# installed for more reliable multiple sequence alignment.
+# Align centroid FASTA records with MUSCLE. On Windows, a missing executable is
+# installed through Scoop when Scoop is available. A single input sequence is
+# copied unchanged because no multiple sequence alignment is required.
 # =============================================================================
 
 import argparse
@@ -19,145 +19,71 @@ from pathlib import Path
 from time import perf_counter
 
 from common import configure_logging
-from config_schema import load_config_file
-from fasta_io import count_fasta_records, parse_fasta, write_fasta
+from fasta_io import count_fasta_records, parse_fasta
 
 log = logging.getLogger(__name__)
-
-_PAIRWISE_ALIGNER = None
-ALIGNMENT_BACKENDS = {"python", "auto", "mafft", "muscle"}
 WARN_ALIGNMENT_SEQUENCE_COUNT = 500
 WARN_ALIGNMENT_BP = 2_000_000
 
 
-def pairwise_aligner():
-    global _PAIRWISE_ALIGNER
-    if _PAIRWISE_ALIGNER is None:
-        from Bio.Align import PairwiseAligner
-
-        aligner = PairwiseAligner()
-        aligner.mode = "global"
-        aligner.match_score = 2
-        aligner.mismatch_score = -1
-        aligner.open_gap_score = -5
-        aligner.extend_gap_score = -0.5
-        _PAIRWISE_ALIGNER = aligner
-    return _PAIRWISE_ALIGNER
+def _log_process_output(completed):
+    if completed.stdout:
+        log.info(completed.stdout.rstrip())
+    if completed.stderr:
+        log.info(completed.stderr.rstrip())
 
 
-def pairwise_align(reference, sequence):
-    alignments = pairwise_aligner().align(reference.upper(), sequence.upper())
-    if not alignments:
-        return reference.upper(), sequence.upper()
-    alignment = alignments[0]
-    return str(alignment[0]), str(alignment[1])
+def ensure_muscle():
+    """Return MUSCLE, installing it with Scoop on Windows when possible."""
+    executable = shutil.which("muscle")
+    if executable:
+        return executable
 
+    if os.name != "nt":
+        raise RuntimeError(
+            "MUSCLE is required but was not found on PATH. Install it with "
+            "Pixi/Conda and retry."
+        )
 
-def merge_alignment_rows(ref_row, rows, new_ref_row, new_seq_row):
-    merged_ref = []
-    merged_rows = [[] for _ in rows]
-    merged_new = []
-    i = 0
-    j = 0
+    scoop = shutil.which("scoop")
+    if not scoop:
+        raise RuntimeError(
+            "MUSCLE is required on Windows, but Scoop was not found. "
+            "Install Scoop, then run 'scoop install muscle'. See the "
+            "Windows MUSCLE section in README.md."
+        )
 
-    while i < len(ref_row) or j < len(new_ref_row):
-        if i < len(ref_row) and ref_row[i] == "-":
-            merged_ref.append("-")
-            for idx, row in enumerate(rows):
-                merged_rows[idx].append(row[i])
-            merged_new.append("-")
-            i += 1
-        elif j < len(new_ref_row) and new_ref_row[j] == "-":
-            merged_ref.append("-")
-            for row in merged_rows:
-                row.append("-")
-            merged_new.append(new_seq_row[j])
-            j += 1
-        else:
-            merged_ref.append(ref_row[i])
-            for idx, row in enumerate(rows):
-                merged_rows[idx].append(row[i])
-            merged_new.append(new_seq_row[j])
-            i += 1
-            j += 1
-
-    return (
-        "".join(merged_ref),
-        ["".join(row) for row in merged_rows],
-        "".join(merged_new),
+    log.info("MUSCLE not found; installing it with Scoop")
+    completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
+        [scoop, "install", "muscle"],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-
-
-def center_star_align(records):
-    if len(records) < 2:
-        return records
-
-    if len({len(seq) for _, seq in records}) == 1:
-        return [(header, seq.upper()) for header, seq in records]
-
-    ref_index = max(range(len(records)), key=lambda idx: len(records[idx][1]))
-    ref_header, ref_seq = records[ref_index]
-    ordered = [records[ref_index]] + [
-        record for idx, record in enumerate(records) if idx != ref_index
-    ]
-
-    ref_row = ref_seq.upper()
-    rows = [ref_row]
-    headers = [ref_header]
-
-    for header, seq in ordered[1:]:
-        new_ref_row, new_seq_row = pairwise_align(ref_seq, seq)
-        ref_row, rows, new_seq_row = merge_alignment_rows(
-            ref_row, rows, new_ref_row, new_seq_row
+    _log_process_output(completed)
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"Scoop failed to install MUSCLE with exit code {completed.returncode}. "
+            "Run 'scoop install muscle' manually and retry."
         )
-        rows[0] = ref_row
-        rows.append(new_seq_row)
-        headers.append(header)
 
-    return list(zip(headers, rows, strict=False))
-
-
-def _first_available_backend():
-    for backend in ["mafft", "muscle"]:
-        if shutil.which(backend):
-            return backend
-    return None
-
-
-def _run_and_log(cmd, stdout=None):
-    log.info("Running: %s", " ".join(str(part) for part in cmd))
-    if stdout is None:
-        result = subprocess.run(  # noqa: S603 - backend commands use shell=False.
-            cmd, capture_output=True, text=True
+    executable = shutil.which("muscle")
+    if not executable:
+        raise RuntimeError(
+            "Scoop reported a successful MUSCLE installation, but muscle was "
+            "not found on PATH. Restart the shell and retry."
         )
-    else:
-        result = subprocess.run(  # noqa: S603 - backend commands use shell=False.
-            cmd, stdout=stdout, stderr=subprocess.PIPE, text=True
-        )
-    if result.stdout:
-        log.info(result.stdout.rstrip())
-    if result.stderr:
-        log.info(result.stderr.rstrip())
-    return result
+    return executable
 
 
-def _backend_executable(backend):
-    if backend == "python":
-        return sys.executable
-    return shutil.which(backend) or ""
-
-
-def _backend_version(backend):
-    if backend == "python":
-        return sys.version.split()[0]
-
-    exe = shutil.which(backend)
-    if not exe:
-        return ""
-
+def _backend_version(executable):
     try:
-        result = subprocess.run(  # noqa: S603 - executable came from allowed PATH lookup.
-            [exe, "--version"], capture_output=True, text=True, timeout=10
+        result = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
+            [executable, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return ""
@@ -192,31 +118,28 @@ def write_alignment_metadata(path, row):
         )
 
 
-def run_mafft(input_path, output_path):
-    exe = shutil.which("mafft")
-    if not exe:
-        raise FileNotFoundError("mafft executable not found")
-
-    with open(output_path, "w", encoding="utf-8") as out_fh:
-        result = _run_and_log([exe, "--auto", input_path], stdout=out_fh)
-    return result.returncode == 0 and os.path.getsize(output_path) > 0
-
-
-def run_muscle(input_path, output_path):
-    exe = shutil.which("muscle")
-    if not exe:
-        raise FileNotFoundError("muscle executable not found")
-
+def run_muscle(executable, input_path, output_path):
     output_tmp = Path(output_path).with_suffix(Path(output_path).suffix + ".tmp")
     commands = [
-        [exe, "-align", input_path, "-output", str(output_tmp)],
-        [exe, "-in", input_path, "-out", str(output_tmp)],
+        [executable, "-align", input_path, "-output", str(output_tmp)],
+        [executable, "-in", input_path, "-out", str(output_tmp)],
     ]
-    for cmd in commands:
+    for command in commands:
         if output_tmp.exists():
             output_tmp.unlink()
-        result = _run_and_log(cmd)
-        if result.returncode == 0 and output_tmp.exists() and output_tmp.stat().st_size:
+        log.info("Running MUSCLE: %s", " ".join(str(part) for part in command))
+        completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        _log_process_output(completed)
+        if (
+            completed.returncode == 0
+            and output_tmp.exists()
+            and output_tmp.stat().st_size
+        ):
             os.replace(output_tmp, output_path)
             return True
 
@@ -225,57 +148,11 @@ def run_muscle(input_path, output_path):
     return False
 
 
-def run_external_alignment(backend, input_path, output_path):
-    runners = {"mafft": run_mafft, "muscle": run_muscle}
-    return runners[backend](input_path, output_path)
-
-
-def choose_backend(requested):
-    if requested == "auto":
-        backend = _first_available_backend()
-        if backend:
-            log.info("alignment_backend=auto selected %s", backend)
-            return backend
-        log.warning("alignment_backend=auto found no MAFFT/MUSCLE; using python")
-        return "python"
-    return requested
-
-
-def align_records(records, input_path, output_path, requested_backend):
-    backend = choose_backend(requested_backend)
-    if backend == "python":
-        aligned = center_star_align(records)
-        write_fasta(aligned, output_path)
-        return "python"
-
-    try:
-        ok = run_external_alignment(backend, input_path, output_path)
-    except FileNotFoundError as exc:
-        if requested_backend == "auto":
-            log.warning("%s; falling back to python", exc)
-            aligned = center_star_align(records)
-            write_fasta(aligned, output_path)
-            return "python"
-        raise SystemExit(str(exc)) from exc
-
-    if ok:
-        return backend
-
-    if requested_backend == "auto":
-        log.warning("%s alignment failed; falling back to python", backend)
-        aligned = center_star_align(records)
-        write_fasta(aligned, output_path)
-        return "python"
-
-    raise SystemExit(f"{backend} alignment failed; see log for command output")
-
-
 def parse_args():
-    parser = argparse.ArgumentParser(description="Align FASTA records.")
+    parser = argparse.ArgumentParser(description="Align FASTA records with MUSCLE.")
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
-    parser.add_argument("--config", help="Optional AmPrime config.yaml")
-    parser.add_argument("--backend", choices=sorted(ALIGNMENT_BACKENDS))
+    parser.add_argument("--config", help="Accepted for workflow compatibility")
     parser.add_argument("--metadata", help="Optional alignment metadata TSV")
     parser.add_argument("--log", required=True)
     return parser.parse_args()
@@ -286,77 +163,69 @@ def main():
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
-    cfg = load_config_file(args.config) if args.config else {}
-    requested_backend = args.backend or cfg.get("alignment_backend", "python")
-    if requested_backend not in ALIGNMENT_BACKENDS:
-        raise SystemExit(
-            "alignment backend must be one of: auto, mafft, muscle, python"
-        )
-
     started = perf_counter()
-    records = list(parse_fasta(args.input))
-    n_in = len(records)
+    executable = ensure_muscle()
+    n_in = 0
+    total_bp = 0
+    min_len = None
+    max_len = None
+    for _, seq in parse_fasta(args.input):
+        n_in += 1
+        seq_len = len(seq)
+        total_bp += seq_len
+        min_len = seq_len if min_len is None else min(min_len, seq_len)
+        max_len = seq_len if max_len is None else max(max_len, seq_len)
+
     if n_in < 2:
         shutil.copyfile(args.input, args.output)
-        log.info("Only %d sequence(s); skipped alignment", n_in)
+        log.info("Only %d sequence(s); skipped MUSCLE alignment", n_in)
         elapsed = perf_counter() - started
         write_alignment_metadata(
             args.metadata,
             {
-                "requested_backend": requested_backend,
+                "requested_backend": "muscle",
                 "backend_used": "skipped",
                 "fallback_used": False,
-                "backend_executable": "",
-                "backend_version": "",
+                "backend_executable": executable,
+                "backend_version": _backend_version(executable),
                 "n_input_sequences": n_in,
                 "n_output_sequences": n_in,
-                "input_total_bp": sum(len(seq) for _, seq in records),
+                "input_total_bp": total_bp,
                 "elapsed_seconds": round(elapsed, 3),
             },
         )
         return 0
 
-    lengths = [len(seq) for _, seq in records]
-    total_bp = sum(lengths)
     log.info(
         "Input size: %d sequence(s), %d bp total, length range %d-%d bp",
         n_in,
         total_bp,
-        min(lengths),
-        max(lengths),
+        min_len,
+        max_len,
     )
     if n_in > WARN_ALIGNMENT_SEQUENCE_COUNT or total_bp > WARN_ALIGNMENT_BP:
-        log.warning(
-            "Large alignment input. Python fallback alignment is intended for "
-            "first-pass screening and may be slow or less accurate than a full MSA."
-        )
+        log.info("Large alignment input; using MUSCLE")
 
-    backend_used = align_records(records, args.input, args.output, requested_backend)
+    if not run_muscle(executable, args.input, args.output):
+        raise SystemExit("MUSCLE alignment failed; see log for command output")
 
     n_out = count_fasta_records(args.output)
     elapsed = perf_counter() - started
     write_alignment_metadata(
         args.metadata,
         {
-            "requested_backend": requested_backend,
-            "backend_used": backend_used,
-            "fallback_used": requested_backend == "auto" and backend_used == "python",
-            "backend_executable": _backend_executable(backend_used),
-            "backend_version": _backend_version(backend_used),
+            "requested_backend": "muscle",
+            "backend_used": "muscle",
+            "fallback_used": False,
+            "backend_executable": executable,
+            "backend_version": _backend_version(executable),
             "n_input_sequences": n_in,
             "n_output_sequences": n_out,
             "input_total_bp": total_bp,
             "elapsed_seconds": round(elapsed, 3),
         },
     )
-    if backend_used == "python" and len({len(seq) for _, seq in records}) == 1:
-        log.info(
-            "All %d sequences have equal length; skipped pairwise alignment in %.2f s",
-            n_out,
-            elapsed,
-        )
-    else:
-        log.info("Aligned %d sequences with %s in %.2f s", n_out, backend_used, elapsed)
+    log.info("Aligned %d sequences with MUSCLE in %.2f s", n_out, elapsed)
     return 0
 
 
