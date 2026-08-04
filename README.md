@@ -266,11 +266,41 @@ pixi run dry-run
 pixi run pipeline
 pixi run ci
 pixi run package
+pixi run functional-test
+pixi run build-package
+pixi run publish-local
+pixi run package-install-test
 ```
 
-The CI workflow runs `pixi run ci` on pushes and pull requests. Pushing a tag
-like `v0.1.0` runs the release workflow, builds source archives under `dist/`,
-and publishes them to GitHub Releases.
+`package-install-test` builds `amprime`, publishes it to an indexed local conda
+channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer
+project, checks the `amprime` command, verifies the bundled config/workflow
+resources, and runs a Snakemake dry run from the installed package.
+
+For an offline end-to-end run with the local Borrelia test dataset, see
+[docs/test-functional.md](docs/test-functional.md).
+
+You can also call the workflow through the lightweight Python API:
+
+```python
+from amprime import AmPrimeProject
+
+project = AmPrimeProject()
+result = project.run_functional_test()
+print(result.report_html)
+```
+
+After installing the conda package, the same API is exposed as the `amprime`
+command:
+
+```bash
+amprime functional-test
+amprime verify --genus Borrelia --gene recG --expect-no-candidates
+```
+
+The CI workflow runs `pixi run ci` and `pixi run package-install-test` on pushes
+and pull requests. Pushing a tag like `v0.1.0` runs the release workflow, builds
+source archives under `dist/`, and publishes them to GitHub Releases.
 
 ## Troubleshooting
 

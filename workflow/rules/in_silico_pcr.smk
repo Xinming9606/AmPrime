@@ -18,14 +18,15 @@ rule in_silico_pcr:
         str(PRIMERS / "{gene}_amplicons.tsv")
     params:
         gene             = lambda wc: wc.gene,
-        config_file = "config/config.yaml"
+        config_file = "config/config.yaml",
+        script = str(SCRIPTS_DIR / "in_silico_pcr.py")
     log:
         str(RESULTS / "logs" / "in_silico_pcr" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "in_silico_pcr" / "{gene}.txt")
     shell:
         """
-        python workflow/scripts/in_silico_pcr.py \
+        python {params.script:q} \
             --primers-tsv {input.primers:q} \
             --genome-dir {input.genome_dir:q} \
             --out-tsv {output:q} \

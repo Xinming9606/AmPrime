@@ -11,7 +11,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "workflow" / "scripts"
+ROOT_PATH = str(ROOT)
 SCRIPTS_PATH = str(SCRIPTS)
+
+if ROOT_PATH not in sys.path:
+    sys.path.insert(0, ROOT_PATH)
 
 if SCRIPTS_PATH not in sys.path:
     sys.path.insert(0, SCRIPTS_PATH)
@@ -378,6 +382,21 @@ def check_gene_report_cli():
     print("gene report cli ok")
 
 
+def check_amprime_api():
+    from amprime import AmPrimeProject
+
+    project = AmPrimeProject(ROOT)
+    paths = project.result_paths("Borrelia", "recG")
+    assert paths.report_html.as_posix().endswith(
+        "results/Borrelia/reports/recG_report.html"
+    )
+    result = project.run_pipeline(dry_run=True)
+    assert result.returncode == 0
+    assert result.command[0] == "snakemake"
+    assert "-n" in result.command
+    print("amprime api ok")
+
+
 def main():
     for script_name in [
         "download_genomes.py",
@@ -399,6 +418,7 @@ def main():
     check_sequence_cli_steps()
     check_in_silico_pcr_cli()
     check_gene_report_cli()
+    check_amprime_api()
 
 
 if __name__ == "__main__":

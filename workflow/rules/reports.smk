@@ -15,14 +15,15 @@ rule gene_report:
         str(REPORTS / "{gene}_report.html")
     params:
         gene  = lambda wc: wc.gene,
-        config_file = "config/config.yaml"
+        config_file = "config/config.yaml",
+        script = str(SCRIPTS_DIR / "gene_report.py")
     log:
         str(RESULTS / "logs" / "gene_report" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "gene_report" / "{gene}.txt")
     shell:
         """
-        python workflow/scripts/gene_report.py \
+        python {params.script:q} \
             --gene {params.gene:q} \
             --config {params.config_file:q} \
             --primers-tsv {input.primers:q} \

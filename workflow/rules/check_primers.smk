@@ -16,14 +16,15 @@ rule check_primers:
     output:
         str(PRIMERS / "{gene}_primers.tsv")
     params:
-        config_file = "config/config.yaml"
+        config_file = "config/config.yaml",
+        script = str(SCRIPTS_DIR / "check_primers.py")
     log:
         str(RESULTS / "logs" / "check_primers" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "check_primers" / "{gene}.txt")
     shell:
         """
-        python workflow/scripts/check_primers.py \
+        python {params.script:q} \
             --in-tsv {input:q} \
             --out-tsv {output:q} \
             --config {params.config_file:q} \

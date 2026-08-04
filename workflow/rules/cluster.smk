@@ -18,14 +18,15 @@ rule cluster:
     output:
         temp(str(EXTRACTED / "{gene}.centroids.fasta"))
     params:
-        identity = 0.97
+        identity = 0.97,
+        script = str(SCRIPTS_DIR / "cluster_fasta.py")
     log:
         str(RESULTS / "logs" / "cluster" / "{gene}.log")
     benchmark:
         str(RESULTS / "benchmarks" / "cluster" / "{gene}.txt")
     shell:
         """
-        python workflow/scripts/cluster_fasta.py \
+        python {params.script:q} \
             --input {input:q} \
             --output {output:q} \
             --identity {params.identity} \

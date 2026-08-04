@@ -30,3 +30,5 @@ __pycache__/
 envs/*/
 test_data/
 run_*.log
+
+data
