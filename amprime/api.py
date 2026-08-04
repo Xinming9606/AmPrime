@@ -353,6 +353,7 @@ class AmPrimeProject:
         genus: str = DEFAULT_GENUS,
         gene: str = DEFAULT_GENE,
         cores: int = 4,
+        expect_no_candidates: bool = False,
     ) -> FunctionalTestResult:
         self.prepare_local_dataset(archive=archive, genus=genus)
         report_target = self.result_paths(genus, gene).report_html
@@ -386,7 +387,7 @@ class AmPrimeProject:
             ],
         )
         return self.verify_result_outputs(
-            genus=genus, gene=gene, expect_no_candidates=True
+            genus=genus, gene=gene, expect_no_candidates=expect_no_candidates
         )
 
 
@@ -426,7 +427,12 @@ def run_functional_test(
     gene: str = DEFAULT_GENE,
     cores: int = 4,
     root: str | Path | None = None,
+    expect_no_candidates: bool = False,
 ) -> FunctionalTestResult:
     return AmPrimeProject(root).run_functional_test(
-        archive=archive, genus=genus, gene=gene, cores=cores
+        archive=archive,
+        genus=genus,
+        gene=gene,
+        cores=cores,
+        expect_no_candidates=expect_no_candidates,
     )

@@ -60,11 +60,13 @@ After installing the conda package, use:
 amprime functional-test
 ```
 
-For the reference snapshot, expected output ends with:
+The functional test checks that the workflow and reports complete. Candidate
+counts are reported for inspection but are not fixed, because CI may download
+a newer NCBI dataset:
 
 ```text
 functional test ok
-primer_rows=0 pcr_rows=0 backend=python report_bytes=<positive integer>
+primer_rows=<non-negative integer> pcr_rows=<non-negative integer> backend=python report_bytes=<positive integer>
 ```
 
 ## Step 3. Use The Python API
@@ -114,20 +116,20 @@ gene_extract -> cluster -> align -> primers_design -> primers_check -> in_silico
 ## Step 5. Verify Outputs Manually
 
 ```bash
-pixi run python -m amprime verify --genus Borrelia --gene recG --expect-no-candidates
+pixi run python -m amprime verify --genus Borrelia --gene recG
 ```
 
-For the reference snapshot, expected output:
+For the reference snapshot only, add `--expect-no-candidates` to turn the
+no-candidate result into an explicit snapshot assertion:
 
-```text
-functional test ok
-primer_rows=0 pcr_rows=0 backend=python report_bytes=<positive integer>
+```bash
+pixi run python -m amprime verify --genus Borrelia --gene recG --expect-no-candidates
 ```
 
 ## Step 6. Interpret The Result
 
-For the reference snapshot and default config, the test is expected to
-complete successfully but produce no primer candidates:
+For the reference snapshot and default config, the diagnostic result is
+expected to contain no primer candidates:
 
 - `gene_extract` finds 82 `recG` CDS hits.
 - `cluster` reduces them to 12 centroids.
@@ -135,8 +137,7 @@ complete successfully but produce no primer candidates:
 - `gene_report` writes a complete no-candidate report.
 
 These counts and the no-candidate result are not guaranteed for a fresh NCBI
-download. Treat them as diagnostic values for this snapshot; the functional
-test's exact expectation should be updated if the snapshot changes. Synthetic
+download. The CI functional test intentionally does not assert them. Synthetic
 positive primer/PCR behavior is covered by:
 
 ```bash

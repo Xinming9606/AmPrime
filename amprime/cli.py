@@ -57,6 +57,11 @@ def build_parser() -> argparse.ArgumentParser:
     functional.add_argument("--genus", default=DEFAULT_GENUS)
     functional.add_argument("--gene", default=DEFAULT_GENE)
     functional.add_argument("--cores", type=int, default=4)
+    functional.add_argument(
+        "--expect-no-candidates",
+        action="store_true",
+        help="Require the selected test snapshot to produce no candidates.",
+    )
 
     return parser
 
@@ -93,7 +98,11 @@ def main(argv: list[str] | None = None) -> int:
 
         if args.command == "functional-test":
             result = project.run_functional_test(
-                archive=args.archive, genus=args.genus, gene=args.gene, cores=args.cores
+                archive=args.archive,
+                genus=args.genus,
+                gene=args.gene,
+                cores=args.cores,
+                expect_no_candidates=args.expect_no_candidates,
             )
             _print_result(result)
             return 0

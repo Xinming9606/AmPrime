@@ -23,6 +23,7 @@ dependencies:
 
   # development checks
   - ruff
+  - pyrefly=1.2
 
   # Optional alignment backends are intentionally not installed by default.
   # Set alignment_backend: mafft/muscle/auto only after installing that aligner

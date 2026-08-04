@@ -7,8 +7,7 @@
 ![Platforms](https://img.shields.io/badge/platforms-linux--64%20%7C%20osx--arm64%20%7C%20win--64-2ea44f)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-AmPrime designs and validates amplicon-sequencing primer pairs for bacterial
-housekeeping genes using public NCBI genomes.
+AmPrime designs and validates amplicon-sequencing primer pairs for bacterial housekeeping genes using public NCBI genomes.
 
 You give it:
 
@@ -65,8 +64,7 @@ The main idea is simple:
 4. Align representative sequences with the configured alignment backend.
 5. Find conserved primer windows that flank a variable amplicon region.
 6. Filter primer pairs for simple secondary-structure risks.
-7. Validate the best QC-passed candidates against full genomes with the
-   Python primer scanner.
+7. Validate the best QC-passed candidates against full genomes with the Python primer scanner.
 8. Write a browsable HTML report.
 
 Missing genes are handled gracefully. If a gene cannot be found, the pipeline continues and writes a report showing that no candidates were available.
@@ -239,9 +237,7 @@ Snakemake is intentionally kept as a thin scheduler. It manages dependencies, pa
 
 Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Alignment runs write a small metadata TSV next to the alignment, recording the requested backend and the backend actually used. The same alignment summary is included in each HTML report so `alignment_backend: auto` runs remain easy to audit.
 
-Gene extraction is a single batch scan for all configured genes, avoiding a full
-CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker
-processes allocated by Snakemake, while preserving deterministic result sorting.
+Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker processes allocated by Snakemake, while preserving deterministic result sorting.
 
 This keeps each step easy to test and debug. For example:
 
@@ -253,14 +249,7 @@ python workflow/scripts/gene_report.py --help
 
 ## Development
 
-Pixi is the primary project manager. It creates the conda/bioconda environment
-from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`.
-The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows.
-Intel macOS is not supported. Sequence processing defaults to Python so the
-workflow does not depend on platform-specific `vsearch`, `MUSCLE`, `MAFFT`, or
-`seqkit` binaries. For stricter multiple sequence alignment, set
-`alignment_backend: auto`, `mafft`, or `muscle` after installing that aligner on
-your platform.
+Pixi is the primary project manager. It creates the conda/bioconda environment from [pixi.toml](pixi.toml) and keeps runs reproducible with `pixi.lock`. The locked Pixi platforms are Linux, Apple Silicon macOS, and Windows. Intel macOS is not supported. Sequence processing defaults to Python so the workflow does not depend on platform-specific `vsearch`, `MUSCLE`, `MAFFT`, or `seqkit` binaries. For stricter multiple sequence alignment, set `alignment_backend: auto`, `mafft`, or `muscle` after installing that aligner on your platform.
 
 Useful commands:
 
@@ -269,6 +258,7 @@ pixi run compile
 pixi run metadata-check
 pixi run lint
 pixi run format-check
+pixi run pyrefly-check
 pixi run smoke
 pixi run dry-run
 pixi run pipeline
@@ -302,14 +292,10 @@ After installing the conda package, the same API is exposed as the `amprime` com
 
 ```bash
 amprime functional-test
-amprime verify --genus Borrelia --gene recG --expect-no-candidates
+amprime verify --genus Borrelia --gene recG
 ```
 
-The GitHub Actions workflow downloads and caches the Borrelia test archive
-before running `pixi run ci`; local `pixi run ci` does not access NCBI. Pushing a tag
-like `v0.1.0` runs the release workflow, verifies a clean conda-package install,
-builds source archives plus a conda package under `dist/`, uploads them as
-workflow artifacts, and attaches them to the GitHub Release.
+The GitHub Actions workflow downloads and caches the Borrelia test archive before running `pixi run ci`; local `pixi run ci` does not access NCBI. Pushing a tag like `v0.1.0` runs the release workflow, verifies a clean conda-package install, builds source archives plus a conda package under `dist/`, uploads them as workflow artifacts, and attaches them to the GitHub Release.
 
 ## Troubleshooting
 

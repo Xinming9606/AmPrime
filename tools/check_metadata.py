@@ -10,7 +10,7 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-DEV_ONLY_DEPS = {"ruff"}
+DEV_ONLY_DEPS = {"ruff", "pyrefly"}
 
 
 def load_toml(path: Path):
@@ -25,8 +25,8 @@ def dependency_name(spec: str) -> str:
 def pixi_env_dependency(name: str, spec: str) -> str:
     if spec in {"", "*"}:
         return name
-    if name == "python" and spec == "3.12.*":
-        return "python=3.12"
+    if spec.endswith(".*"):
+        return f"{name}={spec[:-2]}"
     return f"{name}{spec}"
 
 
