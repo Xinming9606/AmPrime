@@ -9,12 +9,16 @@ from __future__ import annotations
 
 import contextlib
 import csv
-import importlib.resources as resources
+import os
 import shutil
 import subprocess
 import tarfile
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from importlib import resources
 from pathlib import Path
+
+from .provenance import fasta_directory_summary, sha256_file
 
 DEFAULT_GENUS = "Borrelia"
 DEFAULT_GENE = "recG"
@@ -28,6 +32,8 @@ class ResultPaths:
     report_html: Path
     primers_tsv: Path
     amplicons_tsv: Path
+    species_summary_tsv: Path
+    species_tsv: Path
     diversity_png: Path
     alignment_tsv: Path
 
@@ -77,12 +83,66 @@ def _safe_extract_tar_gz(archive: Path, destination: Path) -> None:
     destination = destination.resolve()
     with tarfile.open(archive, "r:gz") as tar:
         for member in tar.getmembers():
+            if member.issym() or member.islnk():
+                raise ValueError(
+                    f"Refusing to extract link from archive: {member.name}"
+                )
+            if not (member.isdir() or member.isfile()):
+                raise ValueError(
+                    f"Refusing to extract special archive member: {member.name}"
+                )
             target = (destination / member.name).resolve()
             if target != destination and destination not in target.parents:
                 raise ValueError(
                     f"Refusing to extract unsafe archive member: {member.name}"
                 )
-        tar.extractall(destination)
+        tar.extractall(destination, filter="data")
+
+
+def _write_local_manifest(genomes_dir: Path, genus: str, config: Path) -> None:
+    generated_at = datetime.now(UTC).isoformat(timespec="seconds")
+    rows = []
+    for label, fmt in [
+        ("genomic", "fasta"),
+        ("cds", "cds-fasta"),
+        ("rna", "rna-fasta"),
+    ]:
+        directory = genomes_dir / label
+        rows.append(
+            {
+                "label": label,
+                "format": fmt,
+                "output_dir": str(directory),
+                **fasta_directory_summary(directory),
+            }
+        )
+
+    manifest = genomes_dir / "download_manifest.tsv"
+    fieldnames = [
+        "generated_at",
+        "genus",
+        "assembly_level",
+        "label",
+        "format",
+        "output_dir",
+        "n_fna",
+        "total_bytes",
+        "data_fingerprint",
+        "config_sha256",
+    ]
+    with manifest.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=fieldnames, delimiter="\t")
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(
+                {
+                    "generated_at": generated_at,
+                    "genus": genus,
+                    "assembly_level": "local-archive",
+                    "config_sha256": sha256_file(config),
+                    **row,
+                }
+            )
 
 
 def _as_snakemake_target(path: str | Path | None, root: Path) -> str | None:
@@ -107,6 +167,20 @@ class AmPrimeProject:
             return root_snakefile
         return _resource_path("workflow", "Snakefile")
 
+    def workflow_scripts_dir(self) -> Path:
+        candidates = [
+            self.root / "workflow" / "scripts",
+            self.snakefile().parent / "scripts",
+            _resource_path("workflow", "scripts"),
+        ]
+        for candidate in candidates:
+            if (candidate / "config_schema.py").is_file():
+                return candidate
+        searched = "\n".join(str(candidate) for candidate in candidates)
+        raise ModuleNotFoundError(
+            f"Cannot find config_schema.py. Searched:\n{searched}"
+        )
+
     def ensure_default_config(self) -> Path:
         config_path = self.root / "config" / "config.yaml"
         if config_path.is_file():
@@ -127,6 +201,8 @@ class AmPrimeProject:
             report_html=result_dir / "reports" / f"{gene}_report.html",
             primers_tsv=result_dir / "primers" / f"{gene}_primers.tsv",
             amplicons_tsv=result_dir / "primers" / f"{gene}_amplicons.tsv",
+            species_summary_tsv=result_dir / "primers" / f"{gene}_species_summary.tsv",
+            species_tsv=result_dir / "primers" / f"{gene}_species.tsv",
             diversity_png=result_dir / "primers" / f"{gene}_diversity.png",
             alignment_tsv=result_dir / "aligned" / f"{gene}.alignment.tsv",
         )
@@ -140,17 +216,21 @@ class AmPrimeProject:
         if not archive_path.is_file():
             raise FileNotFoundError(f"Cannot find test dataset archive: {archive_path}")
 
+        config_path = self.ensure_default_config()
         output_dir = self.result_dir(genus)
         output_dir.mkdir(parents=True, exist_ok=True)
+        genomes_dir = output_dir / "genomes"
+        if genomes_dir.exists():
+            shutil.rmtree(genomes_dir)
         _safe_extract_tar_gz(archive_path, output_dir)
 
-        genomes_dir = output_dir / "genomes"
         for name in ["genomic", "cds", "rna"]:
             folder = genomes_dir / name
             if not folder.is_dir():
                 raise FileNotFoundError(f"Dataset is missing {folder}")
             if not list(folder.glob("*.fna")):
                 raise FileNotFoundError(f"Dataset has no FASTA files in {folder}")
+        _write_local_manifest(genomes_dir, genus, config_path)
         return genomes_dir
 
     def run_pipeline(
@@ -171,12 +251,29 @@ class AmPrimeProject:
                 command.append("--rerun-incomplete")
         if extra_args:
             command.extend(extra_args)
+        command.extend(
+            [
+                "--shared-fs-usage",
+                "input-output",
+                "persistence",
+                "software-deployment",
+                "sources",
+                "--",
+            ]
+        )
         snakemake_target = _as_snakemake_target(target, self.root)
         if snakemake_target is not None:
             command.append(snakemake_target)
 
-        completed = subprocess.run(
-            command, cwd=self.root, check=False, text=True, capture_output=True
+        env = os.environ.copy()
+        scripts_dir = str(self.workflow_scripts_dir())
+        pythonpath = env.get("PYTHONPATH")
+        env["PYTHONPATH"] = (
+            scripts_dir if not pythonpath else f"{scripts_dir}{os.pathsep}{pythonpath}"
+        )
+
+        completed = subprocess.run(  # noqa: S603 - executable is fixed to Snakemake; shell is disabled.
+            command, cwd=self.root, check=False, text=True, capture_output=True, env=env
         )
         if completed.returncode != 0:
             raise subprocess.CalledProcessError(
@@ -204,6 +301,8 @@ class AmPrimeProject:
             paths.report_html,
             paths.primers_tsv,
             paths.amplicons_tsv,
+            paths.species_summary_tsv,
+            paths.species_tsv,
             paths.diversity_png,
             paths.alignment_tsv,
         ]
@@ -212,6 +311,10 @@ class AmPrimeProject:
                 raise FileNotFoundError(f"Missing expected output: {path}")
         if paths.diversity_png.stat().st_size <= 0:
             raise AssertionError(f"Empty diversity plot: {paths.diversity_png}")
+
+        cross_report = paths.report_html.parent / "gene_report_cross.html"
+        if not cross_report.is_file():
+            raise FileNotFoundError(f"Missing expected output: {cross_report}")
 
         primer_rows = _read_tsv(paths.primers_tsv)
         pcr_rows = _read_tsv(paths.amplicons_tsv)
@@ -222,6 +325,10 @@ class AmPrimeProject:
         html = paths.report_html.read_text(encoding="utf-8")
         if "Alignment" not in html:
             raise AssertionError("Report is missing the alignment metadata section")
+        if "Provenance" not in html or "Config SHA-256" not in html:
+            raise AssertionError("Report is missing provenance fingerprints")
+        if "Species-level validation" not in html:
+            raise AssertionError("Report is missing species-level validation")
         if expect_no_candidates:
             if primer_rows or pcr_rows:
                 raise AssertionError("Expected no primer/PCR rows for this dataset")
@@ -248,8 +355,36 @@ class AmPrimeProject:
         cores: int = 4,
     ) -> FunctionalTestResult:
         self.prepare_local_dataset(archive=archive, genus=genus)
-        target = self.result_paths(genus, gene).report_html
-        self.run_pipeline(target=target, cores=cores, rerun_incomplete=True)
+        report_target = self.result_paths(genus, gene).report_html
+        self.run_pipeline(
+            target=report_target,
+            cores=cores,
+            rerun_incomplete=True,
+            extra_args=[
+                "--rerun-triggers",
+                "mtime",
+                "--forcerun",
+                "gene_extract",
+                "cluster",
+                "align",
+                "primers_design",
+                "primers_check",
+                "in_silico_pcr",
+                "gene_report",
+            ],
+        )
+        cross_target = self.result_dir(genus) / "reports" / "gene_report_cross.html"
+        self.run_pipeline(
+            target=cross_target,
+            cores=cores,
+            rerun_incomplete=True,
+            extra_args=[
+                "--rerun-triggers",
+                "mtime",
+                "--forcerun",
+                "gene_report_cross",
+            ],
+        )
         return self.verify_result_outputs(
             genus=genus, gene=gene, expect_no_candidates=True
         )

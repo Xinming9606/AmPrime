@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# check_primers.py
+# primers_check.py
 #
 # Primer quality filter: computes hairpin, homodimer, heterodimer, and
 # 3'-end stability for every primer pair, then drops pairs that fail any
@@ -10,7 +10,7 @@
 # pure Python; no primer3 C library required. Works on any OS.
 #
 # CLI:
-#   python check_primers.py --in-tsv primers_raw.tsv --out-tsv primers.tsv \
+#   python primers_check.py --in-tsv primers_raw.tsv --out-tsv primers.tsv \
 #       --max-hairpin-dg 0 --max-homodimer-dg -6 ...
 # =============================================================================
 
@@ -43,8 +43,7 @@ IUPAC_BASES = {
 }
 
 IUPAC_COMPLEMENT = str.maketrans(
-    "ACGTRYMKSWHBVDNacgtrymkswhbvdn",
-    "TGCAYRKMSWDVBHNtgcayrkmswdvbhn",
+    "ACGTRYMKSWHBVDNacgtrymkswhbvdn", "TGCAYRKMSWDVBHNtgcayrkmswdvbhn"
 )
 
 # ---------------------------------------------------------------------------
@@ -270,10 +269,11 @@ def check_pair(row: dict, thresholds: dict) -> dict:
         if limit is not None and metrics[key] < limit:
             fails.append(key)
 
-    metrics["qc_pass"] = len(fails) == 0
-    metrics["qc_fail_reasons"] = ";".join(fails) if fails else ""
+    result: dict[str, float | bool | str] = dict(metrics)
+    result["qc_pass"] = len(fails) == 0
+    result["qc_fail_reasons"] = ";".join(fails) if fails else ""
 
-    return metrics
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -368,10 +368,10 @@ def main():
                     "qc_pass",
                     "qc_fail_reasons",
                 ]
-                w.writerow(reader.fieldnames + extra)
+                w.writerow(list(reader.fieldnames) + extra)
         return
 
-    in_fields = reader.fieldnames or []
+    in_fields = list(reader.fieldnames or [])
     qc_fields = [
         "hairpin_fwd_dg",
         "hairpin_rev_dg",
@@ -393,10 +393,7 @@ def main():
     passed = [r for r in checked if r["qc_pass"]]
     n_dropped = len(checked) - len(passed)
     log.info(
-        "Checked %d pairs; %d passed, %d dropped.",
-        len(checked),
-        len(passed),
-        n_dropped,
+        "Checked %d pairs; %d passed, %d dropped.", len(checked), len(passed), n_dropped
     )
 
     if not passed:

@@ -11,9 +11,10 @@ import base64
 import csv
 import logging
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from html import escape
 
+from common import sha256_file
 from config_schema import load_config_file
 
 # =============================================================================
@@ -77,7 +78,18 @@ def _recommended_primer(primers, amplicons):
 
 
 def _build_body(
-    gene, genus, timestamp, primers, top_primer, pcr, diversity_img, alignment_meta=None
+    gene,
+    genus,
+    timestamp,
+    primers,
+    top_primer,
+    pcr,
+    diversity_img,
+    alignment_meta=None,
+    config_sha256="",
+    manifest_sha256="",
+    data_fingerprints=None,
+    species_metrics=None,
 ):
     """Build the report body as a Markdown string, using inline HTML only
     for styled elements (alerts, badges).  All control flow is plain Python."""
@@ -90,6 +102,47 @@ def _build_body(
     out.append(f"# {genus_text} - *{gene_text}* primer design")
     out.append("")
     out.append(f"*Generated {timestamp}*")
+    out.append("")
+
+    # ---- provenance ------------------------------------------------------
+    out.append("## Provenance")
+    out.append("")
+    out.append("|  |  |")
+    out.append("|---|---|")
+    out.append(f"| **Config SHA-256** | {_md_code(config_sha256 or 'unavailable')} |")
+    out.append(
+        f"| **Download manifest SHA-256** | "
+        f"{_md_code(manifest_sha256 or 'unavailable')} |"
+    )
+    for label, fingerprint in sorted((data_fingerprints or {}).items()):
+        out.append(
+            f"| **{_md_cell(label)} data fingerprint** | {_md_code(fingerprint)} |"
+        )
+    out.append("")
+
+    # ---- species-level validation ---------------------------------------
+    out.append("## Species-level validation")
+    out.append("")
+    metrics = species_metrics or {}
+    out.append("| Metric | Value |")
+    out.append("|---|---|")
+    metric_labels = [
+        ("total_genomes", "Total genomes"),
+        ("amplified_genomes", "Amplified genomes"),
+        ("amplification_rate", "Amplification rate"),
+        ("total_species", "Total species"),
+        ("amplified_species", "Amplified species"),
+        ("multi_allele_genomes", "Genomes with multiple amplicon alleles"),
+        ("multi_allele_rate", "Multiple-allele genome rate"),
+        ("overlap_species", "Species with inter-species allele overlap"),
+        ("overlap_rate", "Inter-species overlap rate"),
+        ("unique_amplicon_alleles", "Unique amplicon alleles"),
+    ]
+    for key, label in metric_labels:
+        value = metrics.get(key, "0")
+        if key.endswith("rate"):
+            value = f"{_num({key: value}, key) * 100:.1f}%"
+        out.append(f"| **{_md_cell(label)}** | {_md_cell(value)} |")
     out.append("")
 
     # ---- alignment metadata ---------------------------------------------
@@ -240,6 +293,8 @@ def parse_args():
     parser.add_argument("--amplicons-tsv", required=True)
     parser.add_argument("--diversity-png", required=True)
     parser.add_argument("--alignment-meta")
+    parser.add_argument("--download-manifest")
+    parser.add_argument("--species-summary")
     parser.add_argument("--out-html", required=True)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
@@ -276,6 +331,31 @@ def main():
         if args.alignment_meta and os.path.isfile(args.alignment_meta)
         else []
     )
+    manifest_rows = (
+        _read_tsv(args.download_manifest)
+        if args.download_manifest and os.path.isfile(args.download_manifest)
+        else []
+    )
+    species_metrics = {}
+    if args.species_summary and os.path.isfile(args.species_summary):
+        species_metrics = {
+            row.get("metric", ""): row.get("value", "")
+            for row in _read_tsv(args.species_summary)
+            if row.get("metric")
+        }
+    data_fingerprints = {
+        row.get("label", ""): row.get("data_fingerprint", "")
+        for row in manifest_rows
+        if row.get("label") and row.get("data_fingerprint")
+    }
+    config_sha256 = (
+        sha256_file(args.config) if args.config and os.path.isfile(args.config) else ""
+    )
+    manifest_sha256 = (
+        sha256_file(args.download_manifest)
+        if args.download_manifest and os.path.isfile(args.download_manifest)
+        else ""
+    )
     log.info(
         "primers: %d rows, amplicons: %d rows, alignment metadata: %d rows",
         len(primers),
@@ -289,12 +369,16 @@ def main():
     body_md = _build_body(
         gene=gene,
         genus=genus,
-        timestamp=datetime.now().strftime("%Y-%m-%d %H:%M"),
+        timestamp=datetime.now(UTC).strftime("%Y-%m-%d %H:%M"),
         primers=primers,
         top_primer=_recommended_primer(primers, amplicons),
         pcr=amplicons[0] if amplicons else None,
         diversity_img=_b64_png(args.diversity_png) if has_diversity else None,
         alignment_meta=alignment_meta[0] if alignment_meta else None,
+        config_sha256=config_sha256,
+        manifest_sha256=manifest_sha256,
+        data_fingerprints=data_fingerprints,
+        species_metrics=species_metrics,
     )
 
     # -- markdown to HTML, then wrap in page shell --------------------------

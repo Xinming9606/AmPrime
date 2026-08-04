@@ -19,7 +19,15 @@ import sys
 from pathlib import Path
 
 def _resolve_scripts_dir():
-    candidates = []
+    # Snakemake may execute this Snakefile from its runtime source cache.  A
+    # path derived from __file__ can then contain the cache prefix followed by
+    # the original checkout path, which is not a real filesystem location.
+    # Prefer the checkout's working directory for normal source runs; keep the
+    # resource-based candidates for installed-package consumers.
+    candidates = [
+        Path.cwd().resolve() / "workflow" / "scripts",
+        Path.cwd().resolve() / "scripts",
+    ]
 
     if "__file__" in globals():
         candidates.append(Path(__file__).resolve().parent / "scripts")
@@ -31,13 +39,6 @@ def _resolve_scripts_dir():
         candidates.append(config_schema_path.parent)
     except (OSError, ValueError):
         pass
-
-    candidates.extend(
-        [
-            Path.cwd().resolve() / "workflow" / "scripts",
-            Path.cwd().resolve() / "scripts",
-        ]
-    )
 
     for candidate in candidates:
         if (candidate / "config_schema.py").is_file():
@@ -58,6 +59,8 @@ configfile: "config/config.yaml"
 
 config.update(apply_config_defaults(config))
 validate_config(config)
+
+CONFIG_FILE = "config/config.yaml"
 
 wildcard_constraints:
     gene = r"[^./]+"
@@ -80,20 +83,21 @@ PRIMERS         = RESULTS / "primers"
 REPORTS         = RESULTS / "reports"
 
 # ---------------------------------------------------------------------------
-# Include rule modules (paths relative to this Snakefile in workflow/)
-# ---------------------------------------------------------------------------
-include: workflow.source_path("rules/download_genomes.smk")
-include: workflow.source_path("rules/extract_gene.smk")
-include: workflow.source_path("rules/cluster.smk")
-include: workflow.source_path("rules/align.smk")
-include: workflow.source_path("rules/design_primers.smk")
-include: workflow.source_path("rules/check_primers.smk")
-include: workflow.source_path("rules/in_silico_pcr.smk")
-include: workflow.source_path("rules/reports.smk")
-
-# ---------------------------------------------------------------------------
 # Top-level target: one HTML report per gene
 # ---------------------------------------------------------------------------
 rule all:
     input:
-        expand(str(REPORTS / "{gene}_report.html"), gene=GENES)
+        expand(str(REPORTS / "{gene}_report.html"), gene=GENES),
+        str(REPORTS / "gene_report_cross.html")
+
+# ---------------------------------------------------------------------------
+# Include rule modules (paths relative to this Snakefile in workflow/)
+# ---------------------------------------------------------------------------
+include: workflow.source_path("rules/genomes_download.smk")
+include: workflow.source_path("rules/gene_extract.smk")
+include: workflow.source_path("rules/cluster.smk")
+include: workflow.source_path("rules/align.smk")
+include: workflow.source_path("rules/primers_design.smk")
+include: workflow.source_path("rules/primers_check.smk")
+include: workflow.source_path("rules/in_silico_pcr.smk")
+include: workflow.source_path("rules/reports.smk")

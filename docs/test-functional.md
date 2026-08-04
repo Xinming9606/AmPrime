@@ -1,11 +1,11 @@
 # Functional Test
 
-Use the AmPrime API to run the local Borrelia dataset without downloading from
-NCBI.
+Use the AmPrime API to run the Borrelia dataset. CI downloads the archive from
+NCBI through the project downloader before running the same test.
 
 ## Step 1. Check The Dataset
 
-The archive should exist:
+For the full local test, the archive should exist:
 
 ```text
 data/borrelia-genomes.tar.gz
@@ -20,6 +20,21 @@ genomes/rna/
 ```
 
 Current expected FASTA count: 82 files in each folder.
+
+The CI workflow caches this archive by OS and configuration. On a cache miss,
+GitHub Actions downloads it from NCBI before running the test:
+
+```bash
+pixi run download-ci-test-data
+pixi run ci
+```
+
+`functional-test-ci` only consumes an archive that has already been prepared;
+it does not download data itself:
+
+```bash
+pixi run functional-test-ci
+```
 
 ## Step 2. Run Through The API
 
@@ -85,10 +100,10 @@ pixi run snakemake --cores 4 --rerun-incomplete results/Borrelia/reports/recG_re
 Expected rules:
 
 ```text
-extract_gene -> cluster -> align -> design_primers -> check_primers -> in_silico_pcr -> gene_report
+gene_extract -> cluster -> align -> primers_design -> primers_check -> in_silico_pcr -> gene_report -> gene_report_cross
 ```
 
-`download_genomes` should not run.
+`genomes_download` should not run.
 
 ## Step 5. Verify Outputs Manually
 
@@ -108,7 +123,7 @@ primer_rows=0 pcr_rows=0 backend=python report_bytes=<positive integer>
 With the default config, this dataset is expected to complete successfully but
 produce no primer candidates:
 
-- `extract_gene` finds 82 `recG` CDS hits.
+- `gene_extract` finds 82 `recG` CDS hits.
 - `cluster` reduces them to 12 centroids.
 - `align` uses the Python backend.
 - `gene_report` writes a complete no-candidate report.

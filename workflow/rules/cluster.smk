@@ -5,7 +5,7 @@
 # centroid clusterer at 97% identity, keeping one centroid per cluster.
 # This reduces redundancy before alignment.
 #
-# Input  : results/{genus}/extracted/{gene}.fasta            [temp, from extract_gene]
+# Input  : results/{genus}/extracted/{gene}.fasta            [temp, from gene_extract]
 # Output : results/{genus}/extracted/{gene}.centroids.fasta  [temp]
 #
 # centroids.fasta is temp(): it feeds align only. in_silico_pcr validates
@@ -14,12 +14,13 @@
 
 rule cluster:
     input:
-        str(EXTRACTED / "{gene}.fasta")
+        fasta = str(EXTRACTED / "{gene}.fasta"),
+        config = CONFIG_FILE
     output:
         temp(str(EXTRACTED / "{gene}.centroids.fasta"))
     params:
         identity = 0.97,
-        script = str(SCRIPTS_DIR / "cluster_fasta.py")
+        script = str(SCRIPTS_DIR / "fasta_cluster.py")
     log:
         str(RESULTS / "logs" / "cluster" / "{gene}.log")
     benchmark:
@@ -27,7 +28,7 @@ rule cluster:
     shell:
         """
         python {params.script:q} \
-            --input {input:q} \
+            --input {input.fasta:q} \
             --output {output:q} \
             --identity {params.identity} \
             --log {log:q}

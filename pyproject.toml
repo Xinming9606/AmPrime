@@ -1,7 +1,3 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "amprime"
 version = "0.1.0"
@@ -12,23 +8,21 @@ license = "MIT"
 authors = [
   { name = "AmPrime contributors" },
 ]
-dependencies = [
-  "biopython",
-  "markdown",
-  "matplotlib",
-  "ncbi-genome-download",
-  "numpy",
-  "pyyaml",
-  "snakemake",
-]
+# Runtime dependencies are declared in pixi.toml because AmPrime is distributed
+# as a Pixi-built conda package. Keep this wheel metadata minimal to avoid a
+# second dependency source of truth with PyPI-only package names.
+
+[project.urls]
+Homepage = "https://github.com/Xinming9606/AmPrime"
+Issues = "https://github.com/Xinming9606/AmPrime/issues"
+Repository = "https://github.com/Xinming9606/AmPrime"
 
 [project.scripts]
 amprime = "amprime.cli:main"
 
-[project.urls]
-Homepage = "https://github.com/Xinming9606/AmPrime"
-Repository = "https://github.com/Xinming9606/AmPrime"
-Issues = "https://github.com/Xinming9606/AmPrime/issues"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["amprime"]
@@ -37,3 +31,58 @@ packages = ["amprime"]
 config = "amprime/config"
 workflow = "amprime/workflow"
 Snakefile = "amprime/Snakefile"
+
+[tool.pyrefly]
+# Workflow scripts are executable modules and import their sibling modules
+# (for example, config_schema.py) as top-level imports.
+project-includes = [
+  "amprime/**/*.py",
+  "tools/**/*.py",
+  "workflow/scripts/**/*.py",
+]
+project-excludes = [
+  ".pixi/**",
+  ".snakemake/**",
+  "dist/**",
+  "results/**",
+]
+search-path = [
+  ".",
+  "workflow/scripts",
+]
+python-version = "3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+extend-exclude = [
+  ".git",
+  ".pixi",
+  ".snakemake",
+  "dist",
+  "results",
+]
+
+[tool.ruff.format]
+# Enable reformatting of code snippets in docstrings
+docstring-code-format = true
+# Format all docstring code snippets with a line length of 60
+docstring-code-line-length = 60
+
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ISC", "SIM", "DTZ", "TID"]
+
+[tool.ruff.lint.per-file-ignores]
+"workflow/scripts/*.py" = ["E402"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
+
+[tool.ruff.lint.isort]
+detect-same-package = false
+case-sensitive = true
+combine-as-imports = true
+force-wrap-aliases = true
+order-by-type = true

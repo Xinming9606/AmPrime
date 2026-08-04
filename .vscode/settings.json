@@ -1,4 +1,5 @@
 {
+    "python.pyrefly.configPath": "${workspaceFolder}/pyproject.toml",
     "python-envs.pythonProjects": [
         {
             "path": ".",

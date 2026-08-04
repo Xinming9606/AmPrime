@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# align_fasta.py
+# fasta_align.py
 #
 # Align centroid FASTA records. The default backend is a small cross-platform
 # Python center-star aligner; optional MAFFT/MUSCLE backends can be used when
@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 
+from common import configure_logging
 from config_schema import load_config_file
 from fasta_io import count_fasta_records, parse_fasta, write_fasta
 
@@ -27,16 +28,6 @@ _PAIRWISE_ALIGNER = None
 ALIGNMENT_BACKENDS = {"python", "auto", "mafft", "muscle"}
 WARN_ALIGNMENT_SEQUENCE_COUNT = 500
 WARN_ALIGNMENT_BP = 2_000_000
-
-
-def configure_logging(log_path):
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    logging.basicConfig(
-        filename=log_path,
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
 
 
 def pairwise_aligner():
@@ -136,9 +127,13 @@ def _first_available_backend():
 def _run_and_log(cmd, stdout=None):
     log.info("Running: %s", " ".join(str(part) for part in cmd))
     if stdout is None:
-        result = subprocess.run(cmd, capture_output=True, text=True)
+        result = subprocess.run(  # noqa: S603 - backend commands use shell=False.
+            cmd, capture_output=True, text=True
+        )
     else:
-        result = subprocess.run(cmd, stdout=stdout, stderr=subprocess.PIPE, text=True)
+        result = subprocess.run(  # noqa: S603 - backend commands use shell=False.
+            cmd, stdout=stdout, stderr=subprocess.PIPE, text=True
+        )
     if result.stdout:
         log.info(result.stdout.rstrip())
     if result.stderr:
@@ -161,7 +156,7 @@ def _backend_version(backend):
         return ""
 
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603 - executable came from allowed PATH lookup.
             [exe, "--version"], capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.SubprocessError):

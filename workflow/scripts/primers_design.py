@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # =============================================================================
-# design_primers.py - pure Python primer design implementation
+# primers_design.py - pure Python primer design implementation
 #
 # Reads a multiple sequence alignment (FASTA), computes per-position Shannon
 # entropy, builds degenerate (IUPAC) consensus kmer windows, evaluates all
@@ -9,7 +9,7 @@
 # Dependencies: numpy, matplotlib, Bio (Biopython).  No R required.
 #
 # CLI:
-#   python design_primers.py --aln input.aln --out-tsv primers.tsv \
+#   python primers_design.py --aln input.aln --out-tsv primers.tsv \
 #       --out-plot diversity.png --primer-len 20 ...
 #
 # TSV columns (same as R version):
@@ -26,19 +26,19 @@ import logging
 import os
 from bisect import bisect_left, bisect_right
 from time import perf_counter
+from typing import Any
 
-from config_schema import load_config_file
-
-plt = None
-np = None
-AlignIO = None
-
-# ---------------------------------------------------------------------------
-# IUPAC constants
-# ---------------------------------------------------------------------------
-_IUPAC_COMP_TABLE = str.maketrans(
-    "ACGTRYMKSWHBVDNacgtrymkswhbvdn", "TGCAYRKMSWDVBHNtgcayrkmswdvbhn"
+from common import (
+    config_param as _param,
+    configure_logging,
+    required_param as _required_param,
+    reverse_complement as _rev_comp,
 )
+from config_schema import load_config_file
+from fasta_io import parse_fasta
+
+plt: Any = None
+np: Any = None
 
 _IUPAC_MAP = {
     "A": "A",
@@ -80,14 +80,6 @@ _TSV_FIELDNAMES = [
 _VALID_BASES = frozenset("ACGT")
 WARN_KMER_COUNT = 50_000
 WARN_PAIR_COUNT = 200_000
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def _rev_comp(seq: str) -> str:
-    """IUPAC-aware reverse complement."""
-    return seq.translate(_IUPAC_COMP_TABLE)[::-1]
 
 
 def _iupac_encode(bases: str) -> str:
@@ -343,41 +335,21 @@ def parse_args():
     return parser.parse_args()
 
 
-def _required_param(name, value):
-    if value is None:
-        raise SystemExit(
-            f"missing --{name.replace('_', '-')} or config setting: {name}"
-        )
-    return value
-
-
-def _param(cli_value, cfg, key):
-    return cli_value if cli_value is not None else cfg.get(key)
-
-
 def main():
     args = parse_args()
     started = perf_counter()
 
-    global AlignIO, np, plt
+    global np, plt
     import matplotlib.pyplot as plt
     import numpy as np
-    from Bio import AlignIO
 
     aln_file = args.aln
     out_tsv = args.out_tsv
     out_plot = args.out_plot
     cfg = load_config_file(args.config) if args.config else {}
 
-    log_path = args.log
-    os.makedirs(os.path.dirname(log_path), exist_ok=True)
-    logging.basicConfig(
-        filename=log_path,
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
-    )
-    log = logging.getLogger()
+    configure_logging(args.log)
+    log = logging.getLogger(__name__)
 
     primer_len = _required_param(
         "primer_len", _param(args.primer_len, cfg, "primer_len")
@@ -417,7 +389,7 @@ def main():
         log.info("  %-18s = %s", k, v)
 
     # --- 1. Load alignment ------------------------------------------------
-    records = list(AlignIO.parse(aln_file, "fasta"))
+    records = list(parse_fasta(aln_file))
     if len(records) < 2:
         msg = f"Need at least 2 sequences to estimate diversity; found {len(records)}."
         log.warning(msg)
@@ -425,7 +397,7 @@ def main():
         _plot_placeholder(msg, aln_file, out_plot, log)
         return
 
-    dna_matrix = np.array([list(str(rec.seq).lower()) for rec in records])
+    dna_matrix = np.array([list(sequence.lower()) for _, sequence in records])
     n_seqs, aln_len = dna_matrix.shape
 
     log.info("Loaded %d sequences, alignment length %d bp", n_seqs, aln_len)

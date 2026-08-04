@@ -6,6 +6,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import tarfile
 import tempfile
 from pathlib import Path
 
@@ -42,7 +43,7 @@ def load_script_module(module_name):
 
 
 def run_script_help(script_name):
-    subprocess.run(
+    subprocess.run(  # noqa: S603 - fixed Python executable and project script.
         [sys.executable, str(SCRIPTS / script_name), "--help"],
         cwd=ROOT,
         check=True,
@@ -58,15 +59,23 @@ def check_config_validation():
     cfg = load_config_file(ROOT / "config" / "config.yaml")
     assert cfg["genus"]
     assert cfg["genes"]
+    for invalid_genus in ("../escape", r"..\escape", "genus.name"):
+        invalid_cfg = dict(cfg, genus=invalid_genus)
+        try:
+            config_schema.validate_config(invalid_cfg)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsafe genus was accepted: {invalid_genus}")
     print("config validation ok")
 
 
 def check_kmer_boundary():
     import numpy as np
 
-    design_primers = load_script_module("design_primers")
-    design_primers.np = np
-    kmers = design_primers._build_kmers(
+    primers_design = load_script_module("primers_design")
+    primers_design.__dict__["np"] = np
+    kmers = primers_design._build_kmers(
         np.array(list("acgt")),
         np.array(list("ACGT")),
         np.array([1, 1, 1, 1]),
@@ -88,10 +97,10 @@ def check_primer_qc_cli():
             "primer_id\tfwd\trev\np1\tAAAAAA\tAAAAAA\np2\tAAAAAA\tTTTTTT\n",
             encoding="utf-8",
         )
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
-                str(SCRIPTS / "check_primers.py"),
+                str(SCRIPTS / "primers_check.py"),
                 "--in-tsv",
                 str(in_tsv),
                 "--out-tsv",
@@ -124,8 +133,30 @@ def check_fasta_io():
     print("FASTA IO ok")
 
 
+def check_batch_gene_extraction():
+    gene_extract = load_script_module("gene_extract")
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        cds = tmp / "cds"
+        rna = tmp / "rna"
+        cds.mkdir()
+        rna.mkdir()
+        (cds / "genes.fna").write_text(
+            ">recG_record [gene=recG]\nACGT\n>tuf_record [gene=tuf]\nTGCA\n",
+            encoding="utf-8",
+        )
+        (rna / "genes.fna").write_text(">other [gene=other]\nAAAA\n", encoding="utf-8")
+
+        results = gene_extract.scan_fasta_dirs(
+            [("CDS", cds), ("RNA", rna)], {"recG": {"recg"}, "tuf": {"tuf"}}
+        )
+        assert [seq for _, seq in results["recG"]] == ["ACGT"]
+        assert [seq for _, seq in results["tuf"]] == ["TGCA"]
+    print("batch gene extraction ok")
+
+
 def check_download_manifest():
-    download_genomes = load_script_module("download_genomes")
+    genomes_download = load_script_module("genomes_download")
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
         genomic = tmp / "genomic"
@@ -141,14 +172,15 @@ def check_download_manifest():
             ("cds", "cds-fasta", cds),
             ("rna", "rna-fasta", rna),
         ]
-        download_genomes.reset_download_outputs(downloads, manifest)
+        genomes_download.reset_download_outputs(downloads, manifest)
         assert genomic.is_dir()
         assert cds.is_dir()
         assert rna.is_dir()
         assert not (genomic / "stale.fna").exists()
         assert not manifest.exists()
+        (genomic / "test.fna").write_text(">test\nACGT\n", encoding="utf-8")
 
-        download_genomes.write_manifest(
+        genomes_download.write_manifest(
             manifest,
             "Borrelia",
             "complete",
@@ -157,35 +189,60 @@ def check_download_manifest():
                     "label": "genomic",
                     "format": "fasta",
                     "output_dir": "genomic",
-                    "n_fna": 1,
-                    "total_bytes": 42,
+                    **genomes_download.summarize_fna_dir(genomic),
                 }
             ],
+            config_sha256="config-test",
         )
         with manifest.open(encoding="utf-8") as fh:
             rows = list(csv.DictReader(fh, delimiter="\t"))
         assert rows[0]["genus"] == "Borrelia"
         assert rows[0]["label"] == "genomic"
         assert rows[0]["n_fna"] == "1"
+        assert len(rows[0]["data_fingerprint"]) == 64
+        assert rows[0]["config_sha256"] == "config-test"
     print("download manifest ok")
 
 
+def check_archive_safety():
+    from amprime.api import _safe_extract_tar_gz
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        archive = tmp / "unsafe.tar.gz"
+        destination = tmp / "out"
+        destination.mkdir()
+        with tarfile.open(archive, "w:gz") as tar:
+            link = tarfile.TarInfo("genomes/link")
+            link.type = tarfile.SYMTYPE
+            link.linkname = "../../outside"
+            tar.addfile(link)
+
+        try:
+            _safe_extract_tar_gz(archive, destination)
+        except ValueError as exc:
+            assert "link" in str(exc)
+        else:
+            raise AssertionError("unsafe archive link was not rejected")
+    print("archive safety ok")
+
+
 def check_sequence_cli_steps():
-    cluster_fasta = load_script_module("cluster_fasta")
-    align_fasta = load_script_module("align_fasta")
+    fasta_cluster = load_script_module("fasta_cluster")
+    fasta_align = load_script_module("fasta_align")
     fasta_io = load_script_module("fasta_io")
 
-    assert cluster_fasta.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
-    assert align_fasta.choose_backend("python") == "python"
-    exact_deduped = cluster_fasta.cluster_records(
+    assert fasta_cluster.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
+    assert fasta_align.choose_backend("python") == "python"
+    exact_deduped = fasta_cluster.cluster_records(
         [(">a", "ACGT"), (">b", "acgt")], 0.97
     )
     assert len(exact_deduped) == 1
-    assert align_fasta.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
+    assert fasta_align.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
         (">a", "ACGT"),
         (">b", "TGCA"),
     ]
-    unequal_aligned = align_fasta.center_star_align(
+    unequal_aligned = fasta_align.center_star_align(
         [(">a", "ACGTACGT"), (">b", "ACGTTACGT"), (">c", "ACGTACG")]
     )
     assert len({len(seq) for _, seq in unequal_aligned}) == 1
@@ -203,10 +260,10 @@ def check_sequence_cli_steps():
         raw_fasta.write_text(
             ">a\nACGTACGTACGT\n>b\nACGTACGTACGT\n>c\nACGTACGTTTGT\n", encoding="utf-8"
         )
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
-                str(SCRIPTS / "cluster_fasta.py"),
+                str(SCRIPTS / "fasta_cluster.py"),
                 "--input",
                 str(raw_fasta),
                 "--output",
@@ -222,10 +279,10 @@ def check_sequence_cli_steps():
         )
         assert fasta_io.count_fasta_records(centroids) == 2
 
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
-                str(SCRIPTS / "align_fasta.py"),
+                str(SCRIPTS / "fasta_align.py"),
                 "--input",
                 str(centroids),
                 "--output",
@@ -261,6 +318,8 @@ def check_in_silico_pcr_cli():
         genome_dir.mkdir()
         primers = tmp / "primers.tsv"
         out_tsv = tmp / "amplicons.tsv"
+        species_summary = tmp / "species_summary.tsv"
+        species_tsv = tmp / "species.tsv"
         log = tmp / "pcr.log"
 
         primers.write_text(
@@ -270,9 +329,12 @@ def check_in_silico_pcr_cli():
             encoding="utf-8",
         )
         (genome_dir / "genome.fna").write_text(
-            ">contig1\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
+            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
         )
-        subprocess.run(
+        (genome_dir / "genome2.fna").write_text(
+            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
+        )
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
                 str(SCRIPTS / "in_silico_pcr.py"),
@@ -292,6 +354,12 @@ def check_in_silico_pcr_cli():
                 "30",
                 "--top-n",
                 "2",
+                "--workers",
+                "2",
+                "--species-summary",
+                str(species_summary),
+                "--species-tsv",
+                str(species_tsv),
                 "--log",
                 str(log),
             ],
@@ -303,8 +371,19 @@ def check_in_silico_pcr_cli():
             rows = list(csv.DictReader(fh, delimiter="\t"))
         assert [row["primer_id"] for row in rows] == ["p2", "p1"]
         assert rows[0]["validation_rank"] == "1"
+        with species_summary.open(encoding="utf-8") as fh:
+            metrics = {
+                row["metric"]: row["value"]
+                for row in csv.DictReader(fh, delimiter="\t")
+            }
+        assert metrics["amplified_genomes"] == "2"
+        assert metrics["amplified_species"] == "1"
+        with species_tsv.open(encoding="utf-8") as fh:
+            species_rows = list(csv.DictReader(fh, delimiter="\t"))
+        assert species_rows[0]["species"] == "Test species"
         assert rows[0]["input_rank"] == "2"
-        assert rows[0]["n_genomes_amplified"] == "1"
+        assert rows[0]["n_genomes_amplified"] == "2"
+        assert rows[0]["total_genomes"] == "2"
 
         gene_report = load_script_module("gene_report")
         assert (
@@ -350,7 +429,7 @@ def check_gene_report_cli():
             encoding="utf-8",
         )
 
-        subprocess.run(
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
                 sys.executable,
                 str(SCRIPTS / "gene_report.py"),
@@ -382,6 +461,42 @@ def check_gene_report_cli():
     print("gene report cli ok")
 
 
+def check_gene_report_cross_cli():
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        summary = tmp / "recG_species_summary.tsv"
+        report = tmp / "reports" / "cross.html"
+        summary.write_text(
+            "metric\tvalue\n"
+            "amplified_genomes\t2\n"
+            "amplification_rate\t1.0\n"
+            "amplified_species\t1\n"
+            "multi_allele_genomes\t0\n"
+            "overlap_species\t0\n"
+            "overlap_rate\t0.0\n"
+            "unique_amplicon_alleles\t1\n",
+            encoding="utf-8",
+        )
+        subprocess.run(  # noqa: S603 - fixed Python executable and project script.
+            [
+                sys.executable,
+                str(SCRIPTS / "gene_report_cross.py"),
+                "--summary-tsv",
+                str(summary),
+                "--out-html",
+                str(report),
+            ],
+            cwd=ROOT,
+            check=True,
+            env=smoke_env(),
+        )
+        html = report.read_text(encoding="utf-8")
+        assert "AmPrime cross-gene comparison" in html
+        assert "recG" in html
+        assert "100.0%" in html
+    print("cross-gene report cli ok")
+
+
 def check_amprime_api():
     from amprime import AmPrimeProject
 
@@ -399,25 +514,29 @@ def check_amprime_api():
 
 def main():
     for script_name in [
-        "download_genomes.py",
-        "extract_gene.py",
-        "cluster_fasta.py",
-        "align_fasta.py",
-        "design_primers.py",
-        "check_primers.py",
+        "genomes_download.py",
+        "gene_extract.py",
+        "fasta_cluster.py",
+        "fasta_align.py",
+        "primers_design.py",
+        "primers_check.py",
         "in_silico_pcr.py",
         "gene_report.py",
+        "gene_report_cross.py",
     ]:
         run_script_help(script_name)
 
     check_config_validation()
     check_fasta_io()
+    check_batch_gene_extraction()
     check_download_manifest()
+    check_archive_safety()
     check_kmer_boundary()
     check_primer_qc_cli()
     check_sequence_cli_steps()
     check_in_silico_pcr_cli()
     check_gene_report_cli()
+    check_gene_report_cross_cli()
     check_amprime_api()
 
 

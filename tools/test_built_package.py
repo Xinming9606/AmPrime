@@ -35,13 +35,8 @@ def clean_env():
 
 def run(command, cwd, stdout=None):
     print(f"+ {' '.join(str(part) for part in command)}", flush=True)
-    return subprocess.run(
-        command,
-        cwd=cwd,
-        env=clean_env(),
-        check=True,
-        text=True,
-        stdout=stdout,
+    return subprocess.run(  # noqa: S603 - internal calls use fixed Pixi commands; shell is disabled.
+        command, cwd=cwd, env=clean_env(), check=True, text=True, stdout=stdout
     )
 
 
@@ -92,10 +87,7 @@ def assert_installed_package(channel_url: str, keep_tmp: bool) -> Path:
         )
         run(["pixi", "add", f"{PACKAGE_NAME}=={PACKAGE_VERSION}"], cwd=project)
         run(["pixi", "run", "amprime", "--help"], cwd=project)
-        run(
-            ["pixi", "run", "python", "-c", install_assertion_code()],
-            cwd=project,
-        )
+        run(["pixi", "run", "python", "-c", install_assertion_code()], cwd=project)
         run(["pixi", "run", "amprime", "run", "--dry-run"], cwd=project)
         print(f"clean install test ok: {PACKAGE_NAME} from {channel_url}")
         return project
@@ -110,10 +102,7 @@ def sys_platform() -> str:
     if sys.platform.startswith("win"):
         return "win-64"
     if sys.platform == "darwin":
-        machine = subprocess.check_output(
-            ["uname", "-m"],
-            text=True,
-        ).strip()
+        machine = subprocess.check_output(["uname", "-m"], text=True).strip()
         if machine == "arm64":
             return "osx-arm64"
         raise RuntimeError("osx-64 is not supported by this project")
