@@ -59,6 +59,14 @@ def check_config_validation():
     cfg = load_config_file(ROOT / "config" / "config.yaml")
     assert cfg["genus"]
     assert cfg["genes"]
+    for invalid_genus in ("../escape", r"..\escape", "genus.name"):
+        invalid_cfg = dict(cfg, genus=invalid_genus)
+        try:
+            config_schema.validate_config(invalid_cfg)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError(f"unsafe genus was accepted: {invalid_genus}")
     print("config validation ok")
 
 

@@ -21,6 +21,7 @@ from common import configure_logging, fasta_directory_summary, sha256_file
 from config_schema import load_config_file
 
 log = logging.getLogger(__name__)
+NCBI_ENTRYPOINT = "from ncbi_genome_download import __main__ as n;exit(n.main())"
 
 
 def run_download(genus, assembly_level, fmt, out_dir):
@@ -30,8 +31,8 @@ def run_download(genus, assembly_level, fmt, out_dir):
         # reliable on Windows, where the generated console-script name and
         # PATH resolution differ from Unix.
         sys.executable,
-        "-m",
-        "ncbi_genome_download",
+        "-c",
+        NCBI_ENTRYPOINT,
         "bacteria",
         "--genera",
         genus,
@@ -44,6 +45,7 @@ def run_download(genus, assembly_level, fmt, out_dir):
         out_dir,
         "--retries",
         "3",
+        "--verbose",
     ]
     log.info("Running: %s", subprocess.list2cmdline(cmd))
     result = subprocess.run(  # noqa: S603 - fixed downloader with shell=False.

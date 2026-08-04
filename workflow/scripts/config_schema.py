@@ -77,6 +77,8 @@ def validate_config(cfg):
     genus = cfg.get("genus")
     if not isinstance(genus, str) or not genus.strip():
         errors.append("genus must be a non-empty string")
+    elif "/" in genus or "\\" in genus or "." in genus:
+        errors.append(f"genus names cannot contain '/', '\\', or '.': {genus}")
 
     genes = cfg.get("genes")
     if not isinstance(genes, list) or not genes:
