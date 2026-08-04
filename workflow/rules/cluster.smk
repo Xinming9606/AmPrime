@@ -14,7 +14,8 @@
 
 rule cluster:
     input:
-        str(EXTRACTED / "{gene}.fasta")
+        fasta = str(EXTRACTED / "{gene}.fasta"),
+        config = CONFIG_FILE
     output:
         temp(str(EXTRACTED / "{gene}.centroids.fasta"))
     params:
@@ -27,7 +28,7 @@ rule cluster:
     shell:
         """
         python {params.script:q} \
-            --input {input:q} \
+            --input {input.fasta:q} \
             --output {output:q} \
             --identity {params.identity} \
             --log {log:q}

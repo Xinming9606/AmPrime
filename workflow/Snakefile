@@ -59,6 +59,8 @@ configfile: "config/config.yaml"
 config.update(apply_config_defaults(config))
 validate_config(config)
 
+CONFIG_FILE = "config/config.yaml"
+
 wildcard_constraints:
     gene = r"[^./]+"
 
@@ -80,6 +82,13 @@ PRIMERS         = RESULTS / "primers"
 REPORTS         = RESULTS / "reports"
 
 # ---------------------------------------------------------------------------
+# Top-level target: one HTML report per gene
+# ---------------------------------------------------------------------------
+rule all:
+    input:
+        expand(str(REPORTS / "{gene}_report.html"), gene=GENES)
+
+# ---------------------------------------------------------------------------
 # Include rule modules (paths relative to this Snakefile in workflow/)
 # ---------------------------------------------------------------------------
 include: workflow.source_path("rules/download_genomes.smk")
@@ -90,10 +99,3 @@ include: workflow.source_path("rules/design_primers.smk")
 include: workflow.source_path("rules/check_primers.smk")
 include: workflow.source_path("rules/in_silico_pcr.smk")
 include: workflow.source_path("rules/reports.smk")
-
-# ---------------------------------------------------------------------------
-# Top-level target: one HTML report per gene
-# ---------------------------------------------------------------------------
-rule all:
-    input:
-        expand(str(REPORTS / "{gene}_report.html"), gene=GENES)

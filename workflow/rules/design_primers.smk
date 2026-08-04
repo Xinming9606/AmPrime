@@ -12,13 +12,14 @@
 
 rule design_primers:
     input:
-        aln = str(RESULTS / "aligned" / "{gene}.aln")
+        aln = str(RESULTS / "aligned" / "{gene}.aln"),
+        config = CONFIG_FILE
     output:
         tsv  = temp(str(PRIMERS / "{gene}_primers_raw.tsv")),
         plot = str(PRIMERS / "{gene}_diversity.png")
     params:
         gene = lambda wc: wc.gene,
-        config_file = "config/config.yaml",
+        config_file = CONFIG_FILE,
         script = str(SCRIPTS_DIR / "design_primers.py")
     log:
         str(RESULTS / "logs" / "design_primers" / "{gene}.log")

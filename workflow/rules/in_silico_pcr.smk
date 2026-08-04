@@ -13,12 +13,13 @@
 rule in_silico_pcr:
     input:
         primers    = str(PRIMERS / "{gene}_primers.tsv"),
-        genome_dir = str(GENOMES_GENOMIC)
+        genome_dir = str(GENOMES_GENOMIC),
+        config = CONFIG_FILE
     output:
         str(PRIMERS / "{gene}_amplicons.tsv")
     params:
         gene             = lambda wc: wc.gene,
-        config_file = "config/config.yaml",
+        config_file = CONFIG_FILE,
         script = str(SCRIPTS_DIR / "in_silico_pcr.py")
     log:
         str(RESULTS / "logs" / "in_silico_pcr" / "{gene}.log")

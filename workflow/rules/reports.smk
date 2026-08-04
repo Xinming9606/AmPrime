@@ -10,12 +10,13 @@ rule gene_report:
         primers        = str(PRIMERS / "{gene}_primers.tsv"),
         amplicons      = str(PRIMERS / "{gene}_amplicons.tsv"),
         diversity      = str(PRIMERS / "{gene}_diversity.png"),
-        alignment_meta = str(ALIGNED / "{gene}.alignment.tsv")
+        alignment_meta = str(ALIGNED / "{gene}.alignment.tsv"),
+        config         = CONFIG_FILE
     output:
         str(REPORTS / "{gene}_report.html")
     params:
         gene  = lambda wc: wc.gene,
-        config_file = "config/config.yaml",
+        config_file = CONFIG_FILE,
         script = str(SCRIPTS_DIR / "gene_report.py")
     log:
         str(RESULTS / "logs" / "gene_report" / "{gene}.log")

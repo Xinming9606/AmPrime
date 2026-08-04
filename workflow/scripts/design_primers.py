@@ -35,10 +35,10 @@ from common import (
     reverse_complement as _rev_comp,
 )
 from config_schema import load_config_file
+from fasta_io import parse_fasta
 
 plt: Any = None
 np: Any = None
-AlignIO: Any = None
 
 _IUPAC_MAP = {
     "A": "A",
@@ -339,10 +339,9 @@ def main():
     args = parse_args()
     started = perf_counter()
 
-    global AlignIO, np, plt
+    global np, plt
     import matplotlib.pyplot as plt
     import numpy as np
-    from Bio import AlignIO
 
     aln_file = args.aln
     out_tsv = args.out_tsv
@@ -390,8 +389,7 @@ def main():
         log.info("  %-18s = %s", k, v)
 
     # --- 1. Load alignment ------------------------------------------------
-    alignment = AlignIO.read(aln_file, "fasta")
-    records = list(alignment)
+    records = list(parse_fasta(aln_file))
     if len(records) < 2:
         msg = f"Need at least 2 sequences to estimate diversity; found {len(records)}."
         log.warning(msg)
@@ -399,7 +397,7 @@ def main():
         _plot_placeholder(msg, aln_file, out_plot, log)
         return
 
-    dna_matrix = np.array([list(str(rec.seq).lower()) for rec in records])
+    dna_matrix = np.array([list(sequence.lower()) for _, sequence in records])
     n_seqs, aln_len = dna_matrix.shape
 
     log.info("Loaded %d sequences, alignment length %d bp", n_seqs, aln_len)

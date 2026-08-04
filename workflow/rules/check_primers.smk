@@ -12,11 +12,12 @@
 
 rule check_primers:
     input:
-        str(PRIMERS / "{gene}_primers_raw.tsv")
+        primer_tsv = str(PRIMERS / "{gene}_primers_raw.tsv"),
+        config = CONFIG_FILE
     output:
         str(PRIMERS / "{gene}_primers.tsv")
     params:
-        config_file = "config/config.yaml",
+        config_file = CONFIG_FILE,
         script = str(SCRIPTS_DIR / "check_primers.py")
     log:
         str(RESULTS / "logs" / "check_primers" / "{gene}.log")
@@ -25,7 +26,7 @@ rule check_primers:
     shell:
         """
         python {params.script:q} \
-            --in-tsv {input:q} \
+            --in-tsv {input.primer_tsv:q} \
             --out-tsv {output:q} \
             --config {params.config_file:q} \
             --log {log:q}

@@ -271,7 +271,12 @@ class AmPrimeProject:
     ) -> FunctionalTestResult:
         self.prepare_local_dataset(archive=archive, genus=genus)
         target = self.result_paths(genus, gene).report_html
-        self.run_pipeline(target=target, cores=cores, rerun_incomplete=True)
+        self.run_pipeline(
+            target=target,
+            cores=cores,
+            rerun_incomplete=True,
+            extra_args=["--omit-from", "download_genomes"],
+        )
         return self.verify_result_outputs(
             genus=genus, gene=gene, expect_no_candidates=True
         )

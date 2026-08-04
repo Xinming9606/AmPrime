@@ -15,12 +15,13 @@
 
 rule align:
     input:
-        str(EXTRACTED / "{gene}.centroids.fasta")
+        centroids = str(EXTRACTED / "{gene}.centroids.fasta"),
+        config = CONFIG_FILE
     output:
         aln = temp(str(ALIGNED / "{gene}.aln")),
         metadata = str(ALIGNED / "{gene}.alignment.tsv")
     params:
-        config_file = "config/config.yaml",
+        config_file = CONFIG_FILE,
         script = str(SCRIPTS_DIR / "align_fasta.py")
     log:
         str(RESULTS / "logs" / "align" / "{gene}.log")
@@ -29,7 +30,7 @@ rule align:
     shell:
         """
         python {params.script:q} \
-            --input {input:q} \
+            --input {input.centroids:q} \
             --output {output.aln:q} \
             --metadata {output.metadata:q} \
             --config {params.config_file:q} \

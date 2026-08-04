@@ -18,13 +18,15 @@
 
 
 rule download_genomes:
+    input:
+        config = CONFIG_FILE
     output:
         genomic = directory(str(GENOMES_GENOMIC)),
         cds     = directory(str(GENOMES_CDS)),
         rna     = directory(str(GENOMES_RNA)),
         manifest = str(RESULTS / "genomes" / "download_manifest.tsv")
     params:
-        config_file = "config/config.yaml",
+        config_file = CONFIG_FILE,
         script = str(SCRIPTS_DIR / "download_genomes.py")
     log:
         str(RESULTS / "logs" / "download_genomes.log")

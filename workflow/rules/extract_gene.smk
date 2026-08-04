@@ -13,12 +13,13 @@
 rule extract_gene:
     input:
         cds = str(GENOMES_CDS),
-        rna = str(GENOMES_RNA)
+        rna = str(GENOMES_RNA),
+        config = CONFIG_FILE
     output:
         temp(str(EXTRACTED / "{gene}.fasta"))
     params:
         gene = lambda wc: wc.gene,
-        config_file = "config/config.yaml",
+        config_file = CONFIG_FILE,
         cds_dir = str(GENOMES_CDS),
         rna_dir = str(GENOMES_RNA),
         script = str(SCRIPTS_DIR / "extract_gene.py")
