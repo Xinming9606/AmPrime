@@ -39,8 +39,8 @@ ci = { depends-on = [
   "functional-test-ci"
 ] }
 functional-test = "python -m amprime functional-test"
-download-test-data = "python tools/download_test_dataset.py --output data/borrelia-genomes.tar.gz"
-functional-test-ci = { cmd = "python -m amprime functional-test --archive data/borrelia-genomes.tar.gz", depends-on = ["download-test-data"] }
+download-ci-test-data = "python tools/download_test_dataset.py --output data/borrelia-genomes.tar.gz"
+functional-test-ci = "python -m amprime functional-test --archive data/borrelia-genomes.tar.gz"
 source-archive = "python tools/package_release.py"
 conda-build = "pixi publish --path . --target-dir dist/conda --force"
 conda-install-test = "python tools/test_built_package.py"

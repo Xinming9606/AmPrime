@@ -271,7 +271,6 @@ pixi run dry-run
 pixi run pipeline
 pixi run ci
 pixi run functional-test
-pixi run download-test-data
 pixi run functional-test-ci
 pixi run source-archive
 pixi run conda-build
@@ -307,7 +306,8 @@ amprime functional-test
 amprime verify --genus Borrelia --gene recG --expect-no-candidates
 ```
 
-The CI workflow runs `pixi run ci` on pushes and pull requests. Pushing a tag
+The GitHub Actions workflow downloads and caches the Borrelia test archive
+before running `pixi run ci`; local `pixi run ci` does not access NCBI. Pushing a tag
 like `v0.1.0` runs the release workflow, verifies a clean conda-package install,
 builds source archives plus a conda package under `dist/`, uploads them as
 workflow artifacts, and attaches them to the GitHub Release.

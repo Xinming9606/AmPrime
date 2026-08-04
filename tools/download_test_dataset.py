@@ -45,7 +45,12 @@ def download_archive(output: Path, genus: str, config: Path) -> None:
             "--log",
             str(log_path),
         ]
-        subprocess.run(command, cwd=ROOT, check=True, env=_project_env())
+        try:
+            subprocess.run(command, cwd=ROOT, check=True, env=_project_env())
+        except subprocess.CalledProcessError:
+            if log_path.is_file():
+                print(log_path.read_text(encoding="utf-8"), file=sys.stderr)
+            raise
 
         with tarfile.open(partial_output, "w:gz") as archive:
             archive.add(genomes, arcname="genomes")

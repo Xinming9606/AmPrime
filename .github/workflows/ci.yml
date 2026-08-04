@@ -24,5 +24,16 @@ jobs:
         with:
           cache: true
 
+      - name: Cache CI test dataset
+        id: test-data-cache
+        uses: actions/cache@v4
+        with:
+          path: data/borrelia-genomes.tar.gz
+          key: amprime-borrelia-genomes-${{ runner.os }}-${{ hashFiles('config/config.yaml', 'tools/download_test_dataset.py', 'workflow/scripts/download_genomes.py') }}
+
+      - name: Download CI test dataset
+        if: steps.test-data-cache.outputs.cache-hit != 'true'
+        run: pixi run download-ci-test-data
+
       - name: Run project checks
         run: pixi run ci

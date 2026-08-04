@@ -21,16 +21,19 @@ genomes/rna/
 
 Current expected FASTA count: 82 files in each folder.
 
-CI creates the archive from NCBI on every run:
+The CI workflow caches this archive by OS and configuration. On a cache miss,
+GitHub Actions downloads it from NCBI before running the test:
+
+```bash
+pixi run download-ci-test-data
+pixi run ci
+```
+
+`functional-test-ci` only consumes an archive that has already been prepared;
+it does not download data itself:
 
 ```bash
 pixi run functional-test-ci
-```
-
-The download-only step is:
-
-```bash
-pixi run download-test-data
 ```
 
 ## Step 2. Run Through The API
