@@ -17,7 +17,9 @@ rule in_silico_pcr:
         genome_dir = str(GENOMES_GENOMIC),
         config = CONFIG_FILE
     output:
-        str(PRIMERS / "{gene}_amplicons.tsv")
+        summary = str(PRIMERS / "{gene}_amplicons.tsv"),
+        species_summary = str(PRIMERS / "{gene}_species_summary.tsv"),
+        species = str(PRIMERS / "{gene}_species.tsv")
     params:
         gene             = lambda wc: wc.gene,
         config_file = CONFIG_FILE,
@@ -31,9 +33,11 @@ rule in_silico_pcr:
         python {params.script:q} \
             --primers-tsv {input.primers:q} \
             --genome-dir {input.genome_dir:q} \
-            --out-tsv {output:q} \
+            --out-tsv {output.summary:q} \
             --gene {params.gene:q} \
             --config {params.config_file:q} \
             --workers {threads} \
+            --species-summary {output.species_summary:q} \
+            --species-tsv {output.species:q} \
             --log {log:q}
         """

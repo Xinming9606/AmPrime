@@ -11,6 +11,7 @@ import csv
 import glob
 import logging
 import os
+import re
 import sys
 from bisect import bisect_left, bisect_right
 from concurrent.futures import ProcessPoolExecutor
@@ -42,6 +43,14 @@ OUT_COLS = [
     "amplification_rate",
     "mean_amplicon_len",
     "combined_score",
+]
+
+SPECIES_SUMMARY_COLS = ["metric", "value"]
+SPECIES_TABLE_COLS = [
+    "species",
+    "n_amplicon_alleles",
+    "shared_alleles",
+    "has_inter_species_overlap",
 ]
 
 IUPAC_BASES = {
@@ -184,6 +193,102 @@ def amplicon_lengths_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi
     return lengths
 
 
+def amplicon_sequences_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi):
+    """Return primer-oriented amplicon sequences for both DNA strands."""
+    rev_binding = reverse_complement(rev)
+    len_fwd = len(fwd)
+    len_rev = len(rev)
+    sequences = []
+    for strand in strands:
+        fwd_sites = list(find_primer_sites(strand, fwd, mismatch))
+        rev_sites = list(find_primer_sites(strand, rev_binding, mismatch))
+        for fwd_start in fwd_sites:
+            lo = max(fwd_start + len_fwd, fwd_start + valid_lo - len_rev)
+            hi = fwd_start + valid_hi - len_rev
+            start = bisect_left(rev_sites, lo)
+            end = bisect_right(rev_sites, hi)
+            sequences.extend(
+                strand[fwd_start : rev_start + len_rev]
+                for rev_start in rev_sites[start:end]
+            )
+    return sequences
+
+
+def _canonical_sequence(sequence):
+    reverse = reverse_complement(sequence)
+    return min(sequence, reverse)
+
+
+def _species_from_header(header, fallback):
+    match = re.search(r"\[organism=([^\]]+)\]", header, re.IGNORECASE)
+    if match:
+        return " ".join(match.group(1).split())
+    return fallback
+
+
+def _write_species_outputs(summary_path, species_path, candidate, total_genomes):
+    summary = candidate.get("species_alleles", {}) if candidate else {}
+    all_species = candidate.get("all_species", set()) if candidate else set()
+    amplified_genomes = candidate.get("amplified_genomes", 0) if candidate else 0
+    multi_allele_genomes = candidate.get("multi_allele_genomes", 0) if candidate else 0
+    shared_alleles = {
+        allele
+        for alleles in summary.values()
+        for allele in alleles
+        if sum(allele in values for values in summary.values()) > 1
+    }
+    overlap_species = sum(
+        any(allele in shared_alleles for allele in alleles)
+        for alleles in summary.values()
+    )
+    amplified_species = len(summary)
+    metrics = {
+        "total_genomes": total_genomes,
+        "amplified_genomes": amplified_genomes,
+        "amplification_rate": (
+            round(amplified_genomes / total_genomes, 4) if total_genomes else 0.0
+        ),
+        "total_species": len(all_species),
+        "amplified_species": amplified_species,
+        "multi_allele_genomes": multi_allele_genomes,
+        "multi_allele_rate": (
+            round(multi_allele_genomes / amplified_genomes, 4)
+            if amplified_genomes
+            else 0.0
+        ),
+        "overlap_species": overlap_species,
+        "overlap_rate": (
+            round(overlap_species / amplified_species, 4) if amplified_species else 0.0
+        ),
+        "unique_amplicon_alleles": len(
+            {allele for alleles in summary.values() for allele in alleles}
+        ),
+    }
+    if summary_path:
+        os.makedirs(os.path.dirname(summary_path), exist_ok=True)
+        with open(summary_path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=SPECIES_SUMMARY_COLS, delimiter="\t")
+            writer.writeheader()
+            writer.writerows(
+                {"metric": key, "value": value} for key, value in metrics.items()
+            )
+    if species_path:
+        os.makedirs(os.path.dirname(species_path), exist_ok=True)
+        with open(species_path, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=SPECIES_TABLE_COLS, delimiter="\t")
+            writer.writeheader()
+            for species, alleles in sorted(summary.items()):
+                shared = sum(allele in shared_alleles for allele in alleles)
+                writer.writerow(
+                    {
+                        "species": species,
+                        "n_amplicon_alleles": len(alleles),
+                        "shared_alleles": shared,
+                        "has_inter_species_overlap": bool(shared),
+                    }
+                )
+
+
 def parse_args():
     parser = argparse.ArgumentParser(description="Validate primers in silico.")
     parser.add_argument("--primers-tsv", required=True)
@@ -198,6 +303,8 @@ def parse_args():
     parser.add_argument(
         "--workers", type=int, default=1, help="Genome-scanning worker processes."
     )
+    parser.add_argument("--species-summary")
+    parser.add_argument("--species-tsv")
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -218,6 +325,9 @@ def _make_candidate(row, input_rank):
         "combined_score": _float_or_default(row.get("combined_score")),
         "amplified_genomes": 0,
         "amplicon_lengths": [],
+        "species_alleles": {},
+        "all_species": set(),
+        "multi_allele_genomes": 0,
     }
 
 
@@ -260,29 +370,59 @@ def _scan_genome(task):
     genome_bp = 0
     genome_contigs = 0
     per_candidate_hits = [[] for _ in candidate_specs]
-    for _, sequence in parse_fasta(genome):
+    per_candidate_species = [{} for _ in candidate_specs]
+    genome_species = set()
+    for header, sequence in parse_fasta(genome):
+        species = _species_from_header(header, os.path.basename(genome))
+        genome_species.add(species)
         sequence = sequence.upper()
         genome_bp += len(sequence)
         genome_contigs += 1
         strands = (sequence, reverse_complement(sequence))
         for idx, (fwd, rev) in enumerate(candidate_specs):
-            per_candidate_hits[idx].extend(
-                amplicon_lengths_for_strands(
-                    strands, fwd, rev, mismatch, valid_lo, valid_hi
-                )
+            amplicons = amplicon_sequences_for_strands(
+                strands, fwd, rev, mismatch, valid_lo, valid_hi
             )
-    return os.path.basename(genome), genome_bp, genome_contigs, per_candidate_hits
+            if not amplicons:
+                continue
+            per_candidate_hits[idx].extend(len(amplicon) for amplicon in amplicons)
+            species_alleles = per_candidate_species[idx].setdefault(species, set())
+            species_alleles.update(
+                _canonical_sequence(amplicon) for amplicon in amplicons
+            )
+    return (
+        os.path.basename(genome),
+        genome_bp,
+        genome_contigs,
+        per_candidate_hits,
+        per_candidate_species,
+        genome_species,
+    )
 
 
 def _record_genome_result(scan_result, candidates):
-    genome_id, genome_bp, genome_contigs, per_candidate_hits = scan_result
+    (
+        genome_id,
+        genome_bp,
+        genome_contigs,
+        per_candidate_hits,
+        per_candidate_species,
+        genome_species,
+    ) = scan_result
     amplified_here = 0
-    for candidate, lengths in zip(candidates, per_candidate_hits, strict=False):
+    for candidate, lengths, species_alleles in zip(
+        candidates, per_candidate_hits, per_candidate_species, strict=False
+    ):
+        candidate["all_species"].update(genome_species)
         if not lengths:
             continue
         amplified_here += 1
         candidate["amplified_genomes"] += 1
         candidate["amplicon_lengths"].extend(lengths)
+        if sum(len(alleles) for alleles in species_alleles.values()) > 1:
+            candidate["multi_allele_genomes"] += 1
+        for species, alleles in species_alleles.items():
+            candidate["species_alleles"].setdefault(species, set()).update(alleles)
 
     if amplified_here:
         log.info(
@@ -343,6 +483,7 @@ def main():
             "Primer TSV is empty - no primers to validate. Writing empty summary."
         )
         write_summary([], args.out_tsv)
+        _write_species_outputs(args.species_summary, args.species_tsv, None, 0)
         return 0
 
     candidates = [
@@ -363,6 +504,7 @@ def main():
     if total_genomes == 0:
         log.error("No genome files found in %s", args.genome_dir)
         write_summary([], args.out_tsv)
+        _write_species_outputs(args.species_summary, args.species_tsv, None, 0)
         return 1
 
     candidate_specs = [(candidate["fwd"], candidate["rev"]) for candidate in candidates]
@@ -393,6 +535,11 @@ def main():
 
     rows = _summarize_candidates(candidates, total_genomes)
     best = rows[0]
+    best_candidate = next(
+        candidate
+        for candidate in candidates
+        if candidate["primer_id"] == best["primer_id"]
+    )
     log.info(
         "Best pair after PCR: %s amplified %s / %s genomes (rate %.3f)",
         best["primer_id"],
@@ -402,6 +549,12 @@ def main():
     )
 
     write_summary(rows, args.out_tsv)
+    _write_species_outputs(
+        args.species_summary,
+        args.species_tsv,
+        best_candidate,
+        total_genomes,
+    )
     elapsed = perf_counter() - started
     log.info(
         "Scanned %d genome(s), %d contig(s), %d bp for %d candidate pair(s) in %.2f s",

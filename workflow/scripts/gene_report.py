@@ -89,6 +89,7 @@ def _build_body(
     config_sha256="",
     manifest_sha256="",
     data_fingerprints=None,
+    species_metrics=None,
 ):
     """Build the report body as a Markdown string, using inline HTML only
     for styled elements (alerts, badges).  All control flow is plain Python."""
@@ -117,6 +118,31 @@ def _build_body(
         out.append(
             f"| **{_md_cell(label)} data fingerprint** | {_md_code(fingerprint)} |"
         )
+    out.append("")
+
+    # ---- species-level validation ---------------------------------------
+    out.append("## Species-level validation")
+    out.append("")
+    metrics = species_metrics or {}
+    out.append("| Metric | Value |")
+    out.append("|---|---|")
+    metric_labels = [
+        ("total_genomes", "Total genomes"),
+        ("amplified_genomes", "Amplified genomes"),
+        ("amplification_rate", "Amplification rate"),
+        ("total_species", "Total species"),
+        ("amplified_species", "Amplified species"),
+        ("multi_allele_genomes", "Genomes with multiple amplicon alleles"),
+        ("multi_allele_rate", "Multiple-allele genome rate"),
+        ("overlap_species", "Species with inter-species allele overlap"),
+        ("overlap_rate", "Inter-species overlap rate"),
+        ("unique_amplicon_alleles", "Unique amplicon alleles"),
+    ]
+    for key, label in metric_labels:
+        value = metrics.get(key, "0")
+        if key.endswith("rate"):
+            value = f"{_num({key: value}, key) * 100:.1f}%"
+        out.append(f"| **{_md_cell(label)}** | {_md_cell(value)} |")
     out.append("")
 
     # ---- alignment metadata ---------------------------------------------
@@ -268,6 +294,7 @@ def parse_args():
     parser.add_argument("--diversity-png", required=True)
     parser.add_argument("--alignment-meta")
     parser.add_argument("--download-manifest")
+    parser.add_argument("--species-summary")
     parser.add_argument("--out-html", required=True)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
@@ -309,6 +336,13 @@ def main():
         if args.download_manifest and os.path.isfile(args.download_manifest)
         else []
     )
+    species_metrics = {}
+    if args.species_summary and os.path.isfile(args.species_summary):
+        species_metrics = {
+            row.get("metric", ""): row.get("value", "")
+            for row in _read_tsv(args.species_summary)
+            if row.get("metric")
+        }
     data_fingerprints = {
         row.get("label", ""): row.get("data_fingerprint", "")
         for row in manifest_rows
@@ -344,6 +378,7 @@ def main():
         config_sha256=config_sha256,
         manifest_sha256=manifest_sha256,
         data_fingerprints=data_fingerprints,
+        species_metrics=species_metrics,
     )
 
     # -- markdown to HTML, then wrap in page shell --------------------------

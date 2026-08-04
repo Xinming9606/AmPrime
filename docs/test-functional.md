@@ -92,7 +92,7 @@ pixi run snakemake --cores 4 --rerun-incomplete results/Borrelia/reports/recG_re
 Expected rules:
 
 ```text
-extract_genes -> cluster -> align -> design_primers -> check_primers -> in_silico_pcr -> gene_report
+extract_genes -> cluster -> align -> design_primers -> check_primers -> in_silico_pcr -> gene_report -> cross_gene_report
 ```
 
 `download_genomes` should not run.

@@ -32,6 +32,8 @@ class ResultPaths:
     report_html: Path
     primers_tsv: Path
     amplicons_tsv: Path
+    species_summary_tsv: Path
+    species_tsv: Path
     diversity_png: Path
     alignment_tsv: Path
 
@@ -199,6 +201,8 @@ class AmPrimeProject:
             report_html=result_dir / "reports" / f"{gene}_report.html",
             primers_tsv=result_dir / "primers" / f"{gene}_primers.tsv",
             amplicons_tsv=result_dir / "primers" / f"{gene}_amplicons.tsv",
+            species_summary_tsv=result_dir / "primers" / f"{gene}_species_summary.tsv",
+            species_tsv=result_dir / "primers" / f"{gene}_species.tsv",
             diversity_png=result_dir / "primers" / f"{gene}_diversity.png",
             alignment_tsv=result_dir / "aligned" / f"{gene}.alignment.tsv",
         )
@@ -287,6 +291,8 @@ class AmPrimeProject:
             paths.report_html,
             paths.primers_tsv,
             paths.amplicons_tsv,
+            paths.species_summary_tsv,
+            paths.species_tsv,
             paths.diversity_png,
             paths.alignment_tsv,
         ]
@@ -295,6 +301,10 @@ class AmPrimeProject:
                 raise FileNotFoundError(f"Missing expected output: {path}")
         if paths.diversity_png.stat().st_size <= 0:
             raise AssertionError(f"Empty diversity plot: {paths.diversity_png}")
+
+        cross_gene_report = paths.report_html.parent / "cross_gene_report.html"
+        if not cross_gene_report.is_file():
+            raise FileNotFoundError(f"Missing expected output: {cross_gene_report}")
 
         primer_rows = _read_tsv(paths.primers_tsv)
         pcr_rows = _read_tsv(paths.amplicons_tsv)
@@ -307,6 +317,8 @@ class AmPrimeProject:
             raise AssertionError("Report is missing the alignment metadata section")
         if "Provenance" not in html or "Config SHA-256" not in html:
             raise AssertionError("Report is missing provenance fingerprints")
+        if "Species-level validation" not in html:
+            raise AssertionError("Report is missing species-level validation")
         if expect_no_candidates:
             if primer_rows or pcr_rows:
                 raise AssertionError("Expected no primer/PCR rows for this dataset")
@@ -333,9 +345,8 @@ class AmPrimeProject:
         cores: int = 4,
     ) -> FunctionalTestResult:
         self.prepare_local_dataset(archive=archive, genus=genus)
-        target = self.result_paths(genus, gene).report_html
         self.run_pipeline(
-            target=target,
+            target=None,
             cores=cores,
             rerun_incomplete=True,
             extra_args=[
@@ -349,6 +360,7 @@ class AmPrimeProject:
                 "check_primers",
                 "in_silico_pcr",
                 "gene_report",
+                "cross_gene_report",
             ],
         )
         return self.verify_result_outputs(

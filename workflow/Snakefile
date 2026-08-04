@@ -86,7 +86,8 @@ REPORTS         = RESULTS / "reports"
 # ---------------------------------------------------------------------------
 rule all:
     input:
-        expand(str(REPORTS / "{gene}_report.html"), gene=GENES)
+        expand(str(REPORTS / "{gene}_report.html"), gene=GENES),
+        str(REPORTS / "cross_gene_report.html")
 
 # ---------------------------------------------------------------------------
 # Include rule modules (paths relative to this Snakefile in workflow/)

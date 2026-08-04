@@ -15,7 +15,7 @@ You give it:
 - a bacterial genus, such as `Borrelia`
 - one or more target genes, such as `recG`, `clpA`, or an MLST gene set
 
-It returns one self-contained HTML report per gene with the recommended primer pair, in silico PCR validation, sequence diversity plot, and all candidate primer pairs.
+It returns one self-contained HTML report per gene with the recommended primer pair, in silico PCR and species-level validation, a sequence diversity plot, and all candidate primer pairs. When multiple genes are configured, it also writes a compact cross-gene comparison report.
 
 ## When To Use
 
@@ -164,11 +164,14 @@ For each gene, outputs are written under `results/<genus>/`.
 
 | File                            | Contents                                                                          |
 | ------------------------------- | --------------------------------------------------------------------------------- |
-| `reports/<gene>_report.html`    | Main deliverable: recommendation, PCR validation, plot, and candidate table.      |
+| `reports/<gene>_report.html`    | Main deliverable: recommendation, PCR/species validation, plot, and candidates.   |
+| `reports/cross_gene_report.html` | Cross-gene comparison of amplification and species-level metrics.                |
 | `genomes/download_manifest.tsv` | Download manifest with FASTA counts, sizes, config SHA-256, and data fingerprints. |
 | `aligned/<gene>.alignment.tsv`  | Alignment backend metadata, including actual backend used when `auto` is set.     |
 | `primers/<gene>_primers.tsv`    | Filtered candidate primer pairs ranked by score.                                  |
 | `primers/<gene>_amplicons.tsv`  | In silico PCR results for the top validated primer candidates, sorted best first. |
+| `primers/<gene>_species_summary.tsv` | Species-level amplification, allele multiplicity, and inter-species overlap metrics. |
+| `primers/<gene>_species.tsv` | Per-species amplicon allele and overlap summary. |
 | `primers/<gene>_diversity.png`  | Per-position Shannon entropy plot with top primer sites marked.                   |
 | `logs/...`                      | Per-step logs for debugging.                                                      |
 | `benchmarks/...`                | Snakemake benchmark files.                                                        |
@@ -217,6 +220,7 @@ AmPrime/
 |   |   |-- check_primers.py
 |   |   |-- in_silico_pcr.py
 |   |   |-- gene_report.py
+|   |   |-- cross_gene_report.py
 |   |   |-- common.py
 |   |   |-- fasta_io.py
 |   |   `-- gene_report.html

@@ -311,6 +311,8 @@ def check_in_silico_pcr_cli():
         genome_dir.mkdir()
         primers = tmp / "primers.tsv"
         out_tsv = tmp / "amplicons.tsv"
+        species_summary = tmp / "species_summary.tsv"
+        species_tsv = tmp / "species.tsv"
         log = tmp / "pcr.log"
 
         primers.write_text(
@@ -320,10 +322,12 @@ def check_in_silico_pcr_cli():
             encoding="utf-8",
         )
         (genome_dir / "genome.fna").write_text(
-            ">contig1\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
+            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n",
+            encoding="utf-8",
         )
         (genome_dir / "genome2.fna").write_text(
-            ">contig1\nATGCGGGGGGGGGGACGC\n", encoding="utf-8"
+            ">contig1 [organism=Test species]\nATGCGGGGGGGGGGACGC\n",
+            encoding="utf-8",
         )
         subprocess.run(  # noqa: S603 - fixed Python executable and project script.
             [
@@ -347,6 +351,10 @@ def check_in_silico_pcr_cli():
                 "2",
                 "--workers",
                 "2",
+                "--species-summary",
+                str(species_summary),
+                "--species-tsv",
+                str(species_tsv),
                 "--log",
                 str(log),
             ],
@@ -358,6 +366,16 @@ def check_in_silico_pcr_cli():
             rows = list(csv.DictReader(fh, delimiter="\t"))
         assert [row["primer_id"] for row in rows] == ["p2", "p1"]
         assert rows[0]["validation_rank"] == "1"
+        with species_summary.open(encoding="utf-8") as fh:
+            metrics = {
+                row["metric"]: row["value"]
+                for row in csv.DictReader(fh, delimiter="\t")
+            }
+        assert metrics["amplified_genomes"] == "2"
+        assert metrics["amplified_species"] == "1"
+        with species_tsv.open(encoding="utf-8") as fh:
+            species_rows = list(csv.DictReader(fh, delimiter="\t"))
+        assert species_rows[0]["species"] == "Test species"
         assert rows[0]["input_rank"] == "2"
         assert rows[0]["n_genomes_amplified"] == "2"
         assert rows[0]["total_genomes"] == "2"
