@@ -10,12 +10,12 @@
 import argparse
 import logging
 import os
-import shutil
 import subprocess
 import sys
 from time import perf_counter
 
 from common import configure_logging
+from dependencies import ensure_tool
 from fasta_io import count_fasta_records, parse_fasta
 
 log = logging.getLogger(__name__)
@@ -24,57 +24,7 @@ WARN_SEQUENCE_COUNT = 1000
 WARN_CENTROID_COUNT = 500
 
 
-def _log_process_output(completed):
-    if completed.stdout:
-        log.info(completed.stdout.rstrip())
-    if completed.stderr:
-        log.info(completed.stderr.rstrip())
-
-
-def ensure_vsearch():
-    """Return VSEARCH, installing it with Scoop on Windows when possible."""
-    executable = shutil.which("vsearch")
-    if executable:
-        return executable
-
-    if os.name != "nt":
-        raise RuntimeError(
-            "VSEARCH is required but was not found on PATH. Install it with "
-            "Pixi/Conda and retry."
-        )
-
-    scoop = shutil.which("scoop")
-    if not scoop:
-        raise RuntimeError(
-            "VSEARCH is required on Windows, but Scoop was not found. "
-            "Install Scoop, then run 'scoop install vsearch'. See the "
-            "Windows VSEARCH section in README.md."
-        )
-
-    log.info("VSEARCH not found; installing it with Scoop")
-    completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
-        [scoop, "install", "vsearch"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    _log_process_output(completed)
-    if completed.returncode != 0:
-        raise RuntimeError(
-            f"Scoop failed to install VSEARCH with exit code {completed.returncode}. "
-            "Run 'scoop install vsearch' manually and retry."
-        )
-
-    executable = shutil.which("vsearch")
-    if not executable:
-        raise RuntimeError(
-            "Scoop reported a successful VSEARCH installation, but vsearch was "
-            "not found on PATH. Restart the shell and retry."
-        )
-    return executable
-
-
-def cluster_with_vsearch(executable, input_path, output_path, identity):
+def cluster_with_vsearch(executable, input_path, output_path, identity, threads):
     command = [
         executable,
         "--cluster_fast",
@@ -86,7 +36,7 @@ def cluster_with_vsearch(executable, input_path, output_path, identity):
         "--minseqlength",
         "1",
         "--threads",
-        "1",
+        str(threads),
     ]
     log.info("Running VSEARCH: %s", " ".join(command))
     completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
@@ -95,7 +45,10 @@ def cluster_with_vsearch(executable, input_path, output_path, identity):
         text=True,
         check=False,
     )
-    _log_process_output(completed)
+    if completed.stdout:
+        log.info(completed.stdout.rstrip())
+    if completed.stderr:
+        log.info(completed.stderr.rstrip())
     if completed.returncode != 0:
         raise RuntimeError(
             f"VSEARCH clustering failed with exit code {completed.returncode}"
@@ -107,6 +60,7 @@ def parse_args():
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--identity", required=True, type=float)
+    parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -115,11 +69,13 @@ def main():
     args = parse_args()
     if not 0 < args.identity <= 1:
         raise ValueError("--identity must be greater than 0 and at most 1")
+    if args.threads < 1:
+        raise ValueError("--threads must be a positive integer")
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
     started = perf_counter()
-    executable = ensure_vsearch()
+    executable = ensure_tool("vsearch")
     n_in = 0
     total_bp = 0
     for _, seq in parse_fasta(args.input):
@@ -135,7 +91,9 @@ def main():
     if n_in > WARN_SEQUENCE_COUNT:
         log.info("Large cluster input (%d sequences); using VSEARCH", n_in)
 
-    cluster_with_vsearch(executable, args.input, args.output, args.identity)
+    cluster_with_vsearch(
+        executable, args.input, args.output, args.identity, args.threads
+    )
     n_centroids = count_fasta_records(args.output)
 
     if n_centroids > WARN_CENTROID_COUNT:

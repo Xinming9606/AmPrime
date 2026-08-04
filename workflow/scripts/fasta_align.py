@@ -19,61 +19,12 @@ from pathlib import Path
 from time import perf_counter
 
 from common import configure_logging
+from dependencies import ensure_tool
 from fasta_io import count_fasta_records, parse_fasta
 
 log = logging.getLogger(__name__)
 WARN_ALIGNMENT_SEQUENCE_COUNT = 500
 WARN_ALIGNMENT_BP = 2_000_000
-
-
-def _log_process_output(completed):
-    if completed.stdout:
-        log.info(completed.stdout.rstrip())
-    if completed.stderr:
-        log.info(completed.stderr.rstrip())
-
-
-def ensure_muscle():
-    """Return MUSCLE, installing it with Scoop on Windows when possible."""
-    executable = shutil.which("muscle")
-    if executable:
-        return executable
-
-    if os.name != "nt":
-        raise RuntimeError(
-            "MUSCLE is required but was not found on PATH. Install it with "
-            "Pixi/Conda and retry."
-        )
-
-    scoop = shutil.which("scoop")
-    if not scoop:
-        raise RuntimeError(
-            "MUSCLE is required on Windows, but Scoop was not found. "
-            "Install Scoop, then run 'scoop install muscle'. See the "
-            "Windows MUSCLE section in README.md."
-        )
-
-    log.info("MUSCLE not found; installing it with Scoop")
-    completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
-        [scoop, "install", "muscle"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    _log_process_output(completed)
-    if completed.returncode != 0:
-        raise RuntimeError(
-            f"Scoop failed to install MUSCLE with exit code {completed.returncode}. "
-            "Run 'scoop install muscle' manually and retry."
-        )
-
-    executable = shutil.which("muscle")
-    if not executable:
-        raise RuntimeError(
-            "Scoop reported a successful MUSCLE installation, but muscle was "
-            "not found on PATH. Restart the shell and retry."
-        )
-    return executable
 
 
 def _backend_version(executable):
@@ -118,11 +69,27 @@ def write_alignment_metadata(path, row):
         )
 
 
-def run_muscle(executable, input_path, output_path):
+def run_muscle(executable, input_path, output_path, threads):
     output_tmp = Path(output_path).with_suffix(Path(output_path).suffix + ".tmp")
     commands = [
-        [executable, "-align", input_path, "-output", str(output_tmp)],
-        [executable, "-in", input_path, "-out", str(output_tmp)],
+        [
+            executable,
+            "-align",
+            input_path,
+            "-output",
+            str(output_tmp),
+            "-threads",
+            str(threads),
+        ],
+        [
+            executable,
+            "-in",
+            input_path,
+            "-out",
+            str(output_tmp),
+            "-threads",
+            str(threads),
+        ],
     ]
     for command in commands:
         if output_tmp.exists():
@@ -134,7 +101,10 @@ def run_muscle(executable, input_path, output_path):
             text=True,
             check=False,
         )
-        _log_process_output(completed)
+        if completed.stdout:
+            log.info(completed.stdout.rstrip())
+        if completed.stderr:
+            log.info(completed.stderr.rstrip())
         if (
             completed.returncode == 0
             and output_tmp.exists()
@@ -153,6 +123,7 @@ def parse_args():
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--config", help="Accepted for workflow compatibility")
+    parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--metadata", help="Optional alignment metadata TSV")
     parser.add_argument("--log", required=True)
     return parser.parse_args()
@@ -160,11 +131,13 @@ def parse_args():
 
 def main():
     args = parse_args()
+    if args.threads < 1:
+        raise ValueError("--threads must be a positive integer")
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
     started = perf_counter()
-    executable = ensure_muscle()
+    executable = ensure_tool("muscle")
     n_in = 0
     total_bp = 0
     min_len = None
@@ -206,7 +179,7 @@ def main():
     if n_in > WARN_ALIGNMENT_SEQUENCE_COUNT or total_bp > WARN_ALIGNMENT_BP:
         log.info("Large alignment input; using MUSCLE")
 
-    if not run_muscle(executable, args.input, args.output):
+    if not run_muscle(executable, args.input, args.output, args.threads):
         raise SystemExit("MUSCLE alignment failed; see log for command output")
 
     n_out = count_fasta_records(args.output)
