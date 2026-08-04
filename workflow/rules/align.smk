@@ -14,7 +14,7 @@
 
 
 rule align:
-    threads: 1
+    threads: 4
     resources:
         mem_mb=4096
     input:
@@ -36,6 +36,7 @@ rule align:
             --input {input.centroids:q} \
             --output {output.aln:q} \
             --metadata {output.metadata:q} \
+            --threads {threads} \
             --config {params.config_file:q} \
             --log {log:q}
         """

@@ -24,7 +24,7 @@ WARN_SEQUENCE_COUNT = 1000
 WARN_CENTROID_COUNT = 500
 
 
-def cluster_with_vsearch(executable, input_path, output_path, identity):
+def cluster_with_vsearch(executable, input_path, output_path, identity, threads):
     command = [
         executable,
         "--cluster_fast",
@@ -36,7 +36,7 @@ def cluster_with_vsearch(executable, input_path, output_path, identity):
         "--minseqlength",
         "1",
         "--threads",
-        "1",
+        str(threads),
     ]
     log.info("Running VSEARCH: %s", " ".join(command))
     completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
@@ -60,6 +60,7 @@ def parse_args():
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--identity", required=True, type=float)
+    parser.add_argument("--threads", type=int, default=1)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -68,6 +69,8 @@ def main():
     args = parse_args()
     if not 0 < args.identity <= 1:
         raise ValueError("--identity must be greater than 0 and at most 1")
+    if args.threads < 1:
+        raise ValueError("--threads must be a positive integer")
     configure_logging(args.log)
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
 
@@ -88,7 +91,9 @@ def main():
     if n_in > WARN_SEQUENCE_COUNT:
         log.info("Large cluster input (%d sequences); using VSEARCH", n_in)
 
-    cluster_with_vsearch(executable, args.input, args.output, args.identity)
+    cluster_with_vsearch(
+        executable, args.input, args.output, args.identity, args.threads
+    )
     n_centroids = count_fasta_records(args.output)
 
     if n_centroids > WARN_CENTROID_COUNT:

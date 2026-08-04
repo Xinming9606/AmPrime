@@ -39,6 +39,7 @@ lint = "ruff check workflow/scripts tools amprime"
 format-check = "ruff format --check workflow/scripts tools amprime"
 pyrefly-check = "pyrefly check"
 ensure-dependencies = "python workflow/scripts/dependencies.py"
+performance-smoke = "python tools/performance_smoke.py"
 smoke = { cmd = "python tools/smoke_project.py", depends-on = ["ensure-dependencies"] }
 dry-run = "snakemake --snakefile Snakefile -n all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources"
 pipeline = { cmd = "snakemake --snakefile Snakefile --cores 4 all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources", depends-on = ["ensure-dependencies"] }
@@ -49,6 +50,7 @@ ci = { depends-on = [
   "format-check",
   "pyrefly-check",
   "ensure-dependencies",
+  "performance-smoke",
   "smoke",
   "dry-run",
   "verify-ci-test-data",

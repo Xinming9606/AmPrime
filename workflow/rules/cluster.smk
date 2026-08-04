@@ -12,7 +12,7 @@
 # =============================================================================
 
 rule cluster:
-    threads: 1
+    threads: 4
     resources:
         mem_mb=4096
     input:
@@ -33,5 +33,6 @@ rule cluster:
             --input {input.fasta:q} \
             --output {output:q} \
             --identity {params.identity} \
+            --threads {threads} \
             --log {log:q}
         """

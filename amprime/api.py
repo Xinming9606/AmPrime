@@ -59,7 +59,11 @@ class ResultPaths:
 
 @dataclass(frozen=True)
 class PipelineRun:
-    """Completed Snakemake invocation."""
+    """Completed Snakemake invocation.
+
+    API runs stream child-process output by default. Set ``capture_output`` on
+    ``run_pipeline`` only when the returned stdout/stderr strings are needed.
+    """
 
     command: tuple[str, ...]
     returncode: int
@@ -305,6 +309,7 @@ class AmPrimeProject:
         rerun_incomplete: bool = True,
         extra_args: list[str] | None = None,
         configfile: str | Path | None = None,
+        capture_output: bool = False,
     ) -> PipelineRun:
         effective_config = self.ensure_default_config()
         if configfile is not None:
@@ -344,21 +349,31 @@ class AmPrimeProject:
             scripts_dir if not pythonpath else f"{scripts_dir}{os.pathsep}{pythonpath}"
         )
 
-        completed = subprocess.run(  # noqa: S603 - executable is fixed to Snakemake; shell is disabled.
-            command, cwd=self.root, check=False, text=True, capture_output=True, env=env
-        )
+        if capture_output:
+            completed = subprocess.run(  # noqa: S603 - executable is fixed to Snakemake; shell is disabled.
+                command,
+                cwd=self.root,
+                check=False,
+                text=True,
+                capture_output=True,
+                env=env,
+            )
+        else:
+            completed = subprocess.run(  # noqa: S603 - executable is fixed to Snakemake; shell is disabled.
+                command, cwd=self.root, check=False, text=True, env=env
+            )
         if completed.returncode != 0:
             raise subprocess.CalledProcessError(
                 completed.returncode,
                 command,
-                output=completed.stdout,
-                stderr=completed.stderr,
+                output=completed.stdout or "",
+                stderr=completed.stderr or "",
             )
         return PipelineRun(
             command=tuple(command),
             returncode=completed.returncode,
-            stdout=completed.stdout,
-            stderr=completed.stderr,
+            stdout=completed.stdout or "",
+            stderr=completed.stderr or "",
             target=snakemake_target,
         )
 
@@ -485,9 +500,14 @@ def run_pipeline(
     dry_run: bool = False,
     root: str | Path | None = None,
     configfile: str | Path | None = None,
+    capture_output: bool = False,
 ) -> PipelineRun:
     return AmPrimeProject(root).run_pipeline(
-        target=target, cores=cores, dry_run=dry_run, configfile=configfile
+        target=target,
+        cores=cores,
+        dry_run=dry_run,
+        configfile=configfile,
+        capture_output=capture_output,
     )
 
 

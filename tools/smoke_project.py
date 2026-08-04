@@ -488,7 +488,7 @@ def check_amprime_api():
     assert paths.report_html.as_posix().endswith(
         "results/Borrelia/reports/recG_report.html"
     )
-    result = project.run_pipeline(dry_run=True)
+    result = project.run_pipeline(dry_run=True, capture_output=True)
     assert result.returncode == 0
     assert result.command[0] == "snakemake"
     assert "-n" in result.command

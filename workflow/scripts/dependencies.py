@@ -33,15 +33,16 @@ def ensure_tool(tool: str) -> str:
         )
 
     scoop = shutil.which("scoop")
-    if not scoop:
+    if scoop is None:
         raise RuntimeError(
             f"{tool} is required on Windows, but Scoop was not found. "
             f"Install Scoop, then run 'scoop install {tool}'."
         )
 
     log.info("%s not found; installing it with Scoop", tool)
+    command: list[str] = [scoop, "install", tool]
     completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
-        [scoop, "install", tool],
+        command,
         capture_output=True,
         text=True,
         check=False,
@@ -54,7 +55,7 @@ def ensure_tool(tool: str) -> str:
         )
 
     executable = shutil.which(tool)
-    if not executable:
+    if executable is None:
         raise RuntimeError(
             f"Scoop reported a successful {tool} installation, but {tool} was "
             "not found on PATH. Restart the shell and retry."

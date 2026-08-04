@@ -259,6 +259,7 @@ pixi run lint
 pixi run format-check
 pixi run pyrefly-check
 pixi run ensure-dependencies
+pixi run performance-smoke
 pixi run smoke
 pixi run dry-run
 pixi run pipeline
