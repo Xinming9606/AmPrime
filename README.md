@@ -119,6 +119,7 @@ GC_tol: 0.1
 
 pcr_mismatch: 3
 pcr_top_n: 10
+max_primer_pairs: 100000
 ```
 
 Useful options:
@@ -134,6 +135,7 @@ Useful options:
 | `GC_tol`                               | Maximum GC fraction difference between forward and reverse primers.                             |
 | `pcr_mismatch`                         | Mismatches allowed per primer during in silico PCR.                                             |
 | `pcr_top_n`                            | Number of QC-passed primer pairs to validate before choosing the report recommendation.         |
+| `max_primer_pairs`                     | Maximum number of scored primer pairs retained by primer design.                               |
 
 If a gene is annotated under different names across genomes, add aliases:
 
@@ -236,7 +238,7 @@ Snakemake is intentionally kept as a thin scheduler. It manages dependencies, pa
 
 Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Clustering always uses VSEARCH at 97% identity, and representative sequences are aligned with MUSCLE. Alignment runs write a small metadata TSV next to the alignment, recording the MUSCLE executable and version. The same alignment summary is included in each HTML report so runs remain easy to audit.
 
-Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR invokes SeqKit once per genome for all candidate pairs, with worker processes allocated by Snakemake, while preserving deterministic result sorting. SeqKit reports the longest matching location for each primer pair; Python only parses those BED6+1 results and aggregates report metrics. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The `performance-smoke` task guards against large regressions before very large genera are processed.
+Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR batches genomes into SeqKit `locate` invocations, searches both strands for every candidate site, reconstructs every valid primer-site pairing, and aggregates deterministic report metrics in Python. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The `performance-smoke` task guards against large regressions before very large genera are processed.
 
 This keeps each step easy to test and debug. For example:
 
@@ -380,7 +382,7 @@ scoop install vsearch muscle seqkit
   in each alignment column.
 - MUSCLE is required for multiple sequence alignment.
 - Degenerate-base handling is conservative.
-- Very large genera can take a long time to download, align, and scan in Python.
+- Very large genera can take a long time to download, align, and scan even with batched SeqKit validation.
 
 ## License
 

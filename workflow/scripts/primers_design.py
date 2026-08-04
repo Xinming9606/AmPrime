@@ -182,8 +182,19 @@ def _build_kmers(consensus, pos_code, pos_fold, divs, primer_len):
     return kmers
 
 
-def _evaluate_pairs(candidates, amplicon_min_len, amplicon_max_len, GC_tol):
-    """Return a sorted list of primer-pair dicts (best first)."""
+def _pair_sort_key(row):
+    return (
+        -row["combined_score"],
+        row["total_fold"],
+        row["fwd_pos"],
+        row["rev_pos"],
+    )
+
+
+def _evaluate_pairs(
+    candidates, amplicon_min_len, amplicon_max_len, GC_tol, max_results
+):
+    """Return the best primer pairs without retaining an unbounded result set."""
     results = []
     candidates = sorted(candidates, key=lambda item: item["pos"])
     positions = [candidate["pos"] for candidate in candidates]
@@ -223,8 +234,12 @@ def _evaluate_pairs(candidates, amplicon_min_len, amplicon_max_len, GC_tol):
                     "combined_score": round(score, 6),
                 }
             )
+            if len(results) >= max_results * 2:
+                results.sort(key=_pair_sort_key)
+                del results[max_results:]
 
-    results.sort(key=lambda x: (-x["combined_score"], x["total_fold"]))
+    results.sort(key=_pair_sort_key)
+    del results[max_results:]
     for idx, row in enumerate(results, 1):
         row["primer_id"] = f"primer_pair_{idx}"
     return results
@@ -339,6 +354,7 @@ def parse_args():
     parser.add_argument("--gc-tol", type=float)
     parser.add_argument("--min-allele-freq", type=float)
     parser.add_argument("--max-degeneracy", type=int)
+    parser.add_argument("--max-primer-pairs", type=int)
     parser.add_argument("--log", required=True)
     return parser.parse_args()
 
@@ -386,6 +402,11 @@ def main():
     max_degeneracy = _required_param(
         "max_degeneracy", _param(args.max_degeneracy, cfg, "max_degeneracy")
     )
+    max_primer_pairs = _required_param(
+        "max_primer_pairs", _param(args.max_primer_pairs, cfg, "max_primer_pairs")
+    )
+    if max_primer_pairs < 1:
+        raise SystemExit("max_primer_pairs must be a positive integer")
 
     log.info("Parameters:")
     for k, v in [
@@ -397,6 +418,7 @@ def main():
         ("GC_tol", GC_tol),
         ("min_allele_freq", min_allele_freq),
         ("max_degeneracy", max_degeneracy),
+        ("max_primer_pairs", max_primer_pairs),
     ]:
         log.info("  %-18s = %s", k, v)
 
@@ -469,11 +491,18 @@ def main():
     log.info("%d candidate kmers pass filters", len(candidates))
 
     # --- 7. Evaluate pairs ------------------------------------------------
-    results = _evaluate_pairs(candidates, amplicon_min_len, amplicon_max_len, GC_tol)
-    if len(results) > WARN_PAIR_COUNT:
+    results = _evaluate_pairs(
+        candidates,
+        amplicon_min_len,
+        amplicon_max_len,
+        GC_tol,
+        max_primer_pairs,
+    )
+    if len(results) == max_primer_pairs:
         log.warning(
-            "Large primer result set (%d pairs). Downstream QC/reporting may be slow.",
-            len(results),
+            "Primer pair results were limited to the best %d pairs; "
+            "raise max_primer_pairs to retain more candidates.",
+            max_primer_pairs,
         )
 
     if not results:
