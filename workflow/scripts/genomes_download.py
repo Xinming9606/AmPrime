@@ -21,7 +21,9 @@ from common import configure_logging, fasta_directory_summary, sha256_file
 from config_schema import load_config_file
 
 log = logging.getLogger(__name__)
-NCBI_ENTRYPOINT = "from ncbi_genome_download import __main__ as n;exit(n.main())"
+NCBI_ENTRYPOINT = (
+    "import sys; from ncbi_genome_download import __main__ as n; sys.exit(n.main())"
+)
 
 
 def run_download(genus, assembly_level, fmt, out_dir):
@@ -44,7 +46,7 @@ def run_download(genus, assembly_level, fmt, out_dir):
         "--output-folder",
         out_dir,
         "--retries",
-        "3",
+        "5",
         "--verbose",
     ]
     log.info("Running: %s", subprocess.list2cmdline(cmd))

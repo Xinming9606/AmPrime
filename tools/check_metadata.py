@@ -11,7 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DEV_ONLY_DEPS = {"ruff", "pyrefly"}
-PLATFORM_ONLY_DEPS = {"muscle", "vsearch"}
+PLATFORM_ONLY_DEPS = {"muscle", "seqkit", "vsearch"}
 
 
 def load_toml(path: Path):

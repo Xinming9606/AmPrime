@@ -9,9 +9,11 @@ import os
 import re
 import shutil
 import subprocess
+import tarfile
+from pathlib import Path
 
 log = logging.getLogger(__name__)
-REQUIRED_TOOLS = ("vsearch", "muscle")
+REQUIRED_TOOLS = ("vsearch", "muscle", "seqkit")
 SCOOP_BUCKET_NAME = "main-plus"
 SCOOP_BUCKET_URL = "https://github.com/Scoopforge/Main-Plus"
 
@@ -30,6 +32,63 @@ def _run_scoop(scoop: str, arguments: list[str]) -> subprocess.CompletedProcess[
         capture_output=True,
         text=True,
         check=False,
+    )
+
+
+def _seqkit_runs(executable: str) -> bool:
+    completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
+        [executable, "version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return completed.returncode == 0
+
+
+def _repair_seqkit_archive(scoop: str) -> str | None:
+    """Repair Scoop's historical tarball-as-exe SeqKit installation."""
+    scoop_path = Path(scoop).resolve()
+    scoop_root = Path(os.environ.get("SCOOP", scoop_path.parent.parent))
+    installed = scoop_root / "apps" / "seqkit" / "current" / "seqkit.exe"
+    if not installed.is_file():
+        return None
+
+    with installed.open("rb") as fh:
+        if fh.read(2) != b"\x1f\x8b":
+            return None
+
+    with tarfile.open(installed, mode="r:gz") as archive:
+        member = next(
+            (
+                item
+                for item in archive.getmembers()
+                if item.isfile() and Path(item.name).name.lower() == "seqkit.exe"
+            ),
+            None,
+        )
+        if member is None:
+            return None
+        source = archive.extractfile(member)
+        if source is None:
+            return None
+        repaired = installed.with_suffix(".repaired")
+        repaired.write_bytes(source.read())
+
+    os.replace(repaired, installed)
+    log.info("Repaired Scoop SeqKit archive at %s", installed)
+    return str(installed)
+
+
+def _validate_tool(tool: str, executable: str, scoop: str | None = None) -> str:
+    if tool != "seqkit" or _seqkit_runs(executable):
+        return executable
+    if scoop is not None:
+        repaired = _repair_seqkit_archive(scoop)
+        if repaired is not None and _seqkit_runs(repaired):
+            return repaired
+    raise RuntimeError(
+        "SeqKit was found on PATH but could not run 'seqkit version'. "
+        "Repair or reinstall it with Scoop, then retry."
     )
 
 
@@ -91,14 +150,15 @@ def _ensure_windows_tool(tool: str) -> str:
             "not found on PATH. Restart the shell and retry."
         )
     assert executable is not None
-    return executable
+    return _validate_tool(tool, executable, scoop)
 
 
 def ensure_tool(tool: str) -> str:
     """Return a tool path without probing Scoop on Unix platforms."""
     executable = shutil.which(tool)
     if executable is not None:
-        return executable
+        scoop = shutil.which("scoop") if os.name == "nt" else None
+        return _validate_tool(tool, executable, scoop)
 
     if os.name == "nt":
         return _ensure_windows_tool(tool)

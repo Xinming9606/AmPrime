@@ -2,8 +2,7 @@
 # =============================================================================
 # in_silico_pcr.py
 #
-# Validate top-ranked primer pairs against full genome assemblies with a
-# cross-platform Python primer scanner.
+# Validate top-ranked primer pairs against full genome assemblies with SeqKit.
 # =============================================================================
 
 import argparse
@@ -12,12 +11,13 @@ import glob
 import logging
 import os
 import re
+import subprocess
 import sys
-from bisect import bisect_left, bisect_right
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from time import perf_counter
 
-import numpy as np
 from common import (
     config_param as _param,
     configure_logging,
@@ -25,15 +25,12 @@ from common import (
     reverse_complement,
 )
 from config_schema import load_config_file
+from dependencies import ensure_tool
 from fasta_io import parse_fasta
-from numba import njit
 
 log = logging.getLogger(__name__)
 WARN_GENOME_COUNT = 500
 WARN_TOTAL_GENOME_BP = 500_000_000
-MIN_SEED_LEN = 4
-UNAMBIGUOUS_BASES = frozenset("ACGT")
-
 OUT_COLS = [
     "validation_rank",
     "input_rank",
@@ -55,46 +52,6 @@ SPECIES_TABLE_COLS = [
     "has_inter_species_overlap",
 ]
 
-IUPAC_MASKS = {
-    "A": 0b0001,
-    "C": 0b0010,
-    "G": 0b0100,
-    "T": 0b1000,
-    "R": 0b0101,
-    "Y": 0b1010,
-    "M": 0b0011,
-    "K": 0b1100,
-    "S": 0b0110,
-    "W": 0b1001,
-    "B": 0b1110,
-    "D": 0b1101,
-    "H": 0b1011,
-    "V": 0b0111,
-    "N": 0b1111,
-}
-BASE_MASK_BY_ASCII = np.zeros(256, dtype=np.uint8)
-for _base, _mask in IUPAC_MASKS.items():
-    BASE_MASK_BY_ASCII[ord(_base)] = _mask
-
-
-@njit(cache=True, nogil=True)
-def _matching_starts_numba(target_masks, primer_masks, candidate_starts, max_mismatch):
-    """Verify candidate windows with compiled bitmask matching."""
-    hits = np.empty(candidate_starts.size, dtype=np.int64)
-    n_hits = 0
-    for candidate_idx in range(candidate_starts.size):
-        start = candidate_starts[candidate_idx]
-        mismatches = 0
-        for offset in range(primer_masks.size):
-            if primer_masks[offset] & target_masks[start + offset] == 0:
-                mismatches += 1
-                if mismatches > max_mismatch:
-                    break
-        if mismatches <= max_mismatch:
-            hits[n_hits] = start
-            n_hits += 1
-    return hits[:n_hits]
-
 
 def write_summary(rows, out_tsv):
     os.makedirs(os.path.dirname(out_tsv), exist_ok=True)
@@ -102,180 +59,6 @@ def write_summary(rows, out_tsv):
         writer = csv.DictWriter(fh, fieldnames=OUT_COLS, delimiter="\t")
         writer.writeheader()
         writer.writerows(rows)
-
-
-def base_matches(primer_base, target_base):
-    primer_mask = IUPAC_MASKS.get(primer_base.upper(), 0)
-    target_mask = IUPAC_MASKS.get(target_base.upper(), 0)
-    return bool(primer_mask & target_mask)
-
-
-def primer_window_mismatches(primer, sequence, start, max_mismatch):
-    mismatches = 0
-    for offset, primer_base in enumerate(primer):
-        target_base = sequence[start + offset]
-        if base_matches(primer_base, target_base):
-            continue
-        mismatches += 1
-        if mismatches > max_mismatch:
-            return mismatches
-    return mismatches
-
-
-def _only_unambiguous_dna(seq):
-    return all(base in UNAMBIGUOUS_BASES for base in seq)
-
-
-def _encode_masks(sequence):
-    raw = np.frombuffer(sequence.encode("ascii"), dtype=np.uint8)
-    return BASE_MASK_BY_ASCII[raw]
-
-
-def _primer_masks(primer):
-    return _encode_masks(primer.upper())
-
-
-def _seed_segments(primer, max_mismatch):
-    """Split primer into max_mismatch + 1 exact-match seeds.
-
-    Pigeonhole filtering is only safe when every segment can be searched
-    exactly. If any segment is too short or contains an ambiguous base, callers
-    should fall back to the full sliding-window scan.
-    """
-
-    if max_mismatch < 0 or max_mismatch >= len(primer):
-        return None
-
-    n_segments = max_mismatch + 1
-    base_len, remainder = divmod(len(primer), n_segments)
-    segments = []
-    offset = 0
-    for idx in range(n_segments):
-        seg_len = base_len + (1 if idx < remainder else 0)
-        seed = primer[offset : offset + seg_len]
-        if len(seed) < MIN_SEED_LEN or not _only_unambiguous_dna(seed):
-            return None
-        segments.append((offset, seed))
-        offset += seg_len
-    return segments
-
-
-def _seed_candidate_starts(sequence, primer, max_mismatch):
-    if len(sequence) < len(primer):
-        return []
-    segments = _seed_segments(primer, max_mismatch)
-    if segments is None:
-        return None
-
-    max_start = len(sequence) - len(primer)
-    starts = set()
-    for offset, seed in segments:
-        found_at = sequence.find(seed)
-        while found_at != -1:
-            window_start = found_at - offset
-            if 0 <= window_start <= max_start:
-                starts.add(window_start)
-            found_at = sequence.find(seed, found_at + 1)
-
-    # Exact seed lookup cannot see a primer site that crosses an IUPAC base in
-    # the target. Only windows overlapping such a base need the slower matcher.
-    for position, base in enumerate(sequence):
-        if base in UNAMBIGUOUS_BASES:
-            continue
-        lo = max(0, position - len(primer) + 1)
-        hi = min(max_start, position)
-        starts.update(range(lo, hi + 1))
-    return sorted(starts)
-
-
-def _find_primer_sites(sequence, primer, primer_masks, target_masks, max_mismatch):
-    primer = primer.upper()
-    sequence = sequence.upper()
-    k = len(primer)
-    candidate_starts = _seed_candidate_starts(sequence, primer, max_mismatch)
-    if candidate_starts is None:
-        candidate_array = np.arange(max(0, len(sequence) - k + 1), dtype=np.int64)
-    else:
-        candidate_array = np.asarray(candidate_starts, dtype=np.int64)
-    return _matching_starts_numba(
-        target_masks, primer_masks, candidate_array, max_mismatch
-    )
-
-
-def find_primer_sites(sequence, primer, max_mismatch):
-    sequence = sequence.upper()
-    primer = primer.upper()
-    target_masks = _encode_masks(sequence)
-    primer_masks = _primer_masks(primer)
-    for start in _find_primer_sites(
-        sequence, primer, primer_masks, target_masks, max_mismatch
-    ):
-        yield int(start)
-
-
-def _sites_for_strand(strand, fwd, rev_binding, fwd_masks, rev_masks, mismatch):
-    sequence = strand.upper()
-    target_masks = _encode_masks(sequence)
-    fwd_sites = _find_primer_sites(sequence, fwd, fwd_masks, target_masks, mismatch)
-    rev_sites = _find_primer_sites(
-        sequence, rev_binding, rev_masks, target_masks, mismatch
-    )
-    return sequence, fwd_sites.tolist(), rev_sites.tolist()
-
-
-def amplicon_lengths_for_sequence(sequence, fwd, rev, mismatch, valid_lo, valid_hi):
-    sequence = sequence.upper()
-    return amplicon_lengths_for_strands(
-        (sequence, reverse_complement(sequence)), fwd, rev, mismatch, valid_lo, valid_hi
-    )
-
-
-def amplicon_lengths_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi):
-    fwd = fwd.upper()
-    rev_binding = reverse_complement(rev)
-    len_fwd = len(fwd)
-    len_rev = len(rev)
-    fwd_masks = _primer_masks(fwd)
-    rev_masks = _primer_masks(rev_binding)
-    lengths = []
-    for strand in strands:
-        _, fwd_sites, rev_sites = _sites_for_strand(
-            strand, fwd, rev_binding, fwd_masks, rev_masks, mismatch
-        )
-        for fwd_start in fwd_sites:
-            lo = max(fwd_start + len_fwd, fwd_start + valid_lo - len_rev)
-            hi = fwd_start + valid_hi - len_rev
-            start = bisect_left(rev_sites, lo)
-            end = bisect_right(rev_sites, hi)
-            lengths.extend(
-                rev_start + len_rev - fwd_start for rev_start in rev_sites[start:end]
-            )
-    return lengths
-
-
-def amplicon_sequences_for_strands(strands, fwd, rev, mismatch, valid_lo, valid_hi):
-    """Return primer-oriented amplicon sequences for both DNA strands."""
-    fwd = fwd.upper()
-    rev_binding = reverse_complement(rev)
-    len_fwd = len(fwd)
-    len_rev = len(rev)
-    fwd_masks = _primer_masks(fwd)
-    rev_masks = _primer_masks(rev_binding)
-    sequences = []
-    for strand in strands:
-        sequence, fwd_sites, rev_sites = _sites_for_strand(
-            strand, fwd, rev_binding, fwd_masks, rev_masks, mismatch
-        )
-        for fwd_start in fwd_sites:
-            lo = max(fwd_start + len_fwd, fwd_start + valid_lo - len_rev)
-            hi = fwd_start + valid_hi - len_rev
-            start = bisect_left(rev_sites, lo)
-            end = bisect_right(rev_sites, hi)
-            sequences.extend(
-                sequence[fwd_start : rev_start + len_rev]
-                for rev_start in rev_sites[start:end]
-            )
-    return sequences
 
 
 def _canonical_sequence(sequence):
@@ -288,6 +71,16 @@ def _species_from_header(header, fallback):
     if match:
         return " ".join(match.group(1).split())
     return fallback
+
+
+def _write_seqkit_primer_file(path, candidates):
+    """Write SeqKit's three-column primer-pair input file."""
+    with open(path, "w", newline="", encoding="utf-8") as fh:
+        writer = csv.writer(fh, delimiter="\t", lineterminator="\n")
+        writer.writerows(
+            (candidate["primer_id"], candidate["fwd"], candidate["rev"])
+            for candidate in candidates
+        )
 
 
 def _write_species_outputs(summary_path, species_path, candidate, total_genomes):
@@ -429,31 +222,73 @@ def _summarize_candidates(candidates, total_genomes):
 
 
 def _scan_genome(task):
-    """Scan one genome and return only candidate hit lengths."""
-    genome, candidate_specs, mismatch, valid_lo, valid_hi = task
+    """Run SeqKit once for one genome and return all candidate observations."""
+    executable, genome, primer_file, candidate_ids, mismatch, valid_lo, valid_hi = task
     genome_bp = 0
     genome_contigs = 0
-    per_candidate_hits = [[] for _ in candidate_specs]
+    per_candidate_hits = [[] for _ in candidate_ids]
+    per_candidate_species = [{} for _ in candidate_ids]
     genome_species = set()
+    record_species = {}
     for header, sequence in parse_fasta(genome):
         species = _species_from_header(header, os.path.basename(genome))
         genome_species.add(species)
-        sequence = sequence.upper()
+        record_id = header.lstrip(">\ufeff").split(maxsplit=1)[0]
+        record_species[record_id] = species
         genome_bp += len(sequence)
         genome_contigs += 1
-        strands = (sequence, reverse_complement(sequence))
-        for idx, (fwd, rev) in enumerate(candidate_specs):
-            lengths = amplicon_lengths_for_strands(
-                strands, fwd, rev, mismatch, valid_lo, valid_hi
-            )
-            if not lengths:
-                continue
-            per_candidate_hits[idx].extend(lengths)
+    command = [
+        executable,
+        "amplicon",
+        "--primer-file",
+        primer_file,
+        "--max-mismatch",
+        str(mismatch),
+        "--bed",
+        "--threads",
+        "1",
+        "--quiet",
+        genome,
+    ]
+    completed = subprocess.run(  # noqa: S603 - executable came from PATH lookup.
+        command,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        details = (completed.stderr or completed.stdout).strip()
+        raise RuntimeError(
+            f"SeqKit amplicon failed for {genome} with exit code "
+            f"{completed.returncode}: {details}"
+        )
+
+    candidate_index = {primer_id: idx for idx, primer_id in enumerate(candidate_ids)}
+    for line in completed.stdout.splitlines():
+        fields = line.split("\t", 6)
+        if len(fields) < 7:
+            continue
+        record_id, start, end, primer_id, _, _, amplicon = fields
+        idx = candidate_index.get(primer_id)
+        if idx is None:
+            continue
+        try:
+            length = int(end) - int(start)
+        except ValueError:
+            continue
+        if not valid_lo <= length <= valid_hi:
+            continue
+        species = record_species.get(record_id, os.path.basename(genome))
+        per_candidate_hits[idx].append(length)
+        per_candidate_species[idx].setdefault(species, set()).add(
+            _canonical_sequence(amplicon)
+        )
     return (
         os.path.basename(genome),
         genome_bp,
         genome_contigs,
         per_candidate_hits,
+        per_candidate_species,
         genome_species,
     )
 
@@ -464,16 +299,23 @@ def _record_genome_result(scan_result, candidates):
         genome_bp,
         genome_contigs,
         per_candidate_hits,
+        per_candidate_species,
         genome_species,
     ) = scan_result
     amplified_here = 0
-    for candidate, lengths in zip(candidates, per_candidate_hits, strict=False):
+    for candidate, lengths, species_alleles in zip(
+        candidates, per_candidate_hits, per_candidate_species, strict=False
+    ):
         candidate["all_species"].update(genome_species)
         if not lengths:
             continue
         amplified_here += 1
         candidate["amplified_genomes"] += 1
         candidate["amplicon_lengths"].extend(lengths)
+        for species, alleles in species_alleles.items():
+            candidate["species_alleles"].setdefault(species, set()).update(alleles)
+        if sum(len(alleles) for alleles in species_alleles.values()) > 1:
+            candidate["multi_allele_genomes"] += 1
 
     if amplified_here:
         log.info(
@@ -491,37 +333,6 @@ def _record_genome_result(scan_result, candidates):
             genome_bp,
         )
     return genome_bp, genome_contigs
-
-
-def _scan_best_candidate(task):
-    """Collect allele-level data for the candidate selected after the first pass."""
-    genome, fwd, rev, mismatch, valid_lo, valid_hi = task
-    species_alleles = {}
-    all_species = set()
-    multi_allele = False
-    for header, sequence in parse_fasta(genome):
-        species = _species_from_header(header, os.path.basename(genome))
-        all_species.add(species)
-        sequence = sequence.upper()
-        strands = (sequence, reverse_complement(sequence))
-        amplicons = amplicon_sequences_for_strands(
-            strands, fwd, rev, mismatch, valid_lo, valid_hi
-        )
-        if amplicons:
-            species_alleles.setdefault(species, set()).update(
-                _canonical_sequence(amplicon) for amplicon in amplicons
-            )
-    multi_allele = sum(len(alleles) for alleles in species_alleles.values()) > 1
-    return os.path.basename(genome), species_alleles, all_species, multi_allele
-
-
-def _record_best_candidate_result(scan_result, candidate):
-    _, species_alleles, all_species, multi_allele = scan_result
-    candidate["all_species"].update(all_species)
-    for species, alleles in species_alleles.items():
-        candidate["species_alleles"].setdefault(species, set()).update(alleles)
-    if multi_allele:
-        candidate["multi_allele_genomes"] += 1
 
 
 def main():
@@ -579,7 +390,7 @@ def main():
     log.info("Found %d genome files", total_genomes)
     if total_genomes > WARN_GENOME_COUNT:
         log.warning(
-            "Large PCR input (%d genomes). Python scanning may be CPU-bound.",
+            "Large PCR input (%d genomes). SeqKit scanning may be CPU-bound.",
             total_genomes,
         )
 
@@ -589,22 +400,35 @@ def main():
         _write_species_outputs(args.species_summary, args.species_tsv, None, 0)
         return 1
 
-    candidate_specs = [(candidate["fwd"], candidate["rev"]) for candidate in candidates]
-    tasks = [
-        (genome, candidate_specs, mismatch, valid_lo, valid_hi) for genome in genomes
-    ]
+    executable = ensure_tool("seqkit")
+    candidate_ids = [candidate["primer_id"] for candidate in candidates]
     workers = min(args.workers, total_genomes)
     log.info("Scanning genomes with %d worker process(es)", workers)
-    if workers > 1:
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            scan_results = executor.map(_scan_genome, tasks)
-            totals = [
-                _record_genome_result(result, candidates) for result in scan_results
-            ]
-    else:
-        totals = [
-            _record_genome_result(_scan_genome(task), candidates) for task in tasks
+    with TemporaryDirectory(prefix="amprime-seqkit-") as temp_dir:
+        primer_file = str(Path(temp_dir) / "primers.tsv")
+        _write_seqkit_primer_file(primer_file, candidates)
+        tasks = [
+            (
+                executable,
+                genome,
+                primer_file,
+                candidate_ids,
+                mismatch,
+                valid_lo,
+                valid_hi,
+            )
+            for genome in genomes
         ]
+        if workers > 1:
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                scan_results = executor.map(_scan_genome, tasks)
+                totals = [
+                    _record_genome_result(result, candidates) for result in scan_results
+                ]
+        else:
+            totals = [
+                _record_genome_result(_scan_genome(task), candidates) for task in tasks
+            ]
 
     total_bp_scanned = sum(bp for bp, _ in totals)
     total_contigs = sum(contigs for _, contigs in totals)
@@ -622,26 +446,6 @@ def main():
         for candidate in candidates
         if candidate["primer_id"] == best["primer_id"]
     )
-    best_tasks = [
-        (
-            genome,
-            best_candidate["fwd"],
-            best_candidate["rev"],
-            mismatch,
-            valid_lo,
-            valid_hi,
-        )
-        for genome in genomes
-    ]
-    log.info("Collecting allele data for best primer pair")
-    if workers > 1:
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            best_results = executor.map(_scan_best_candidate, best_tasks)
-            for result in best_results:
-                _record_best_candidate_result(result, best_candidate)
-    else:
-        for task in best_tasks:
-            _record_best_candidate_result(_scan_best_candidate(task), best_candidate)
     log.info(
         "Best pair after PCR: %s amplified %s / %s genomes (rate %.3f)",
         best["primer_id"],
