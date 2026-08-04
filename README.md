@@ -190,6 +190,7 @@ AmPrime/
 |   |-- compile_project.py
 |   |-- check_metadata.py
 |   |-- download_test_dataset.py
+|   |-- verify_test_dataset.py
 |   |-- smoke_project.py
 |   |-- test_built_package.py
 |   `-- package_release.py
@@ -237,7 +238,7 @@ Snakemake is intentionally kept as a thin scheduler. It manages dependencies, pa
 
 Download outputs are refreshed as a unit when the download rule runs, so stale FASTA files from a previous genus or assembly level do not mix into a new run. Alignment runs write a small metadata TSV next to the alignment, recording the requested backend and the backend actually used. The same alignment summary is included in each HTML report so `alignment_backend: auto` runs remain easy to audit.
 
-Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker processes allocated by Snakemake, while preserving deterministic result sorting.
+Gene extraction is a single batch scan for all configured genes, avoiding a full CDS/RNA directory rescan per gene. In-silico PCR scans genomes with the worker processes allocated by Snakemake, while preserving deterministic result sorting. Workflow rules declare thread and memory requirements; the Pixi convenience tasks cap scheduled memory at 8 GB. The Python sequence algorithms still need benchmarking before very large genera are processed.
 
 This keeps each step easy to test and debug. For example:
 
@@ -272,7 +273,7 @@ pixi run conda-install-test
 
 - `source-archive` writes source `.zip` and `.tar.gz` archives under `dist/`.
 - `conda-build` writes a local conda package under `dist/conda/`.
-- `conda-install-test` builds `amprime`, publishes it to an indexed local conda channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer project, checks the `amprime` command, verifies the bundled config/workflow resources, and runs a Snakemake dry run from the installed package.
+- `conda-install-test` builds `amprime`, publishes it to an indexed local conda channel under `dist/conda-channel/`, installs it into a fresh Pixi consumer project, checks the `amprime` command, verifies the bundled config/workflow resources, runs a Snakemake dry run, and executes the functional test against the repository fixture.
 - `metadata-check` keeps mirrored project metadata honest: package names and versions must match across `pixi.toml` and `pyproject.toml`, conda runtime dependencies must stay in `pixi.toml`, and the legacy `environment.yaml` must mirror the default Pixi environment.
 
 For the end-to-end Borrelia functional test, including CI dataset download, see
@@ -295,7 +296,7 @@ amprime functional-test
 amprime verify --genus Borrelia --gene recG
 ```
 
-The GitHub Actions workflow downloads and caches the Borrelia test archive before running `pixi run ci`; local `pixi run ci` does not access NCBI. Pushing a tag like `v0.1.0` runs the release workflow, verifies a clean conda-package install, builds source archives plus a conda package under `dist/`, uploads them as workflow artifacts, and attaches them to the GitHub Release.
+The GitHub Actions workflow downloads and caches the Borrelia test archive before running `pixi run ci`; the archive is paired with a SHA-256 sidecar and an explicit cache snapshot version. Bump that version in the workflow when refreshing the reference dataset. Local `pixi run ci` does not access NCBI. Pushing a tag like `v0.1.0` runs the release workflow, verifies a clean conda-package install, builds source archives plus a conda package under `dist/`, uploads them as workflow artifacts, and attaches them to the GitHub Release.
 
 ## Troubleshooting
 
@@ -314,6 +315,8 @@ If no primers are found, try one or more of the following:
 - inspect the per-gene logs under `results/<genus>/logs/`
 
 If genome download fails, confirm that the genus name is recognized by NCBI and that your internet connection is available.
+
+If the test dataset check reports a checksum mismatch, remove the archive and its `.json` sidecar, then regenerate them together with `pixi run download-ci-test-data`.
 
 If a batch run is slow, inspect the per-step logs and benchmarks under `results/<genus>/logs/` and `results/<genus>/benchmarks/`. The Python sequence steps log input sequence counts, centroid counts, scanned genome bases, and elapsed time. Start with a stricter assembly level such as `complete`, a smaller gene set, or a lower `pcr_top_n` when first testing a large genus.
 

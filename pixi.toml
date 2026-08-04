@@ -29,8 +29,8 @@ lint = "ruff check workflow/scripts tools amprime"
 format-check = "ruff format --check workflow/scripts tools amprime"
 pyrefly-check = "pyrefly check"
 smoke = "python tools/smoke_project.py"
-dry-run = "snakemake --snakefile Snakefile -n all --shared-fs-usage input-output persistence software-deployment sources"
-pipeline = "snakemake --snakefile Snakefile --cores 4 all --shared-fs-usage input-output persistence software-deployment sources"
+dry-run = "snakemake --snakefile Snakefile -n all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources"
+pipeline = "snakemake --snakefile Snakefile --cores 4 all --resources mem_mb=8192 --shared-fs-usage input-output persistence software-deployment sources"
 ci = { depends-on = [
   "compile",
   "metadata-check",
@@ -39,10 +39,12 @@ ci = { depends-on = [
   "pyrefly-check",
   "smoke",
   "dry-run",
+  "verify-ci-test-data",
   "functional-test-ci"
 ] }
 functional-test = "python -m amprime functional-test"
 download-ci-test-data = "python tools/download_test_dataset.py --output data/borrelia-genomes.tar.gz"
+verify-ci-test-data = "python tools/verify_test_dataset.py --archive data/borrelia-genomes.tar.gz"
 functional-test-ci = "python -m amprime functional-test --archive data/borrelia-genomes.tar.gz"
 source-archive = "python tools/package_release.py"
 conda-build = "pixi publish --path . --target-dir dist/conda --force"

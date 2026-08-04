@@ -11,6 +11,9 @@
 
 
 rule primers_design:
+    threads: 1
+    resources:
+        mem_mb=4096
     input:
         aln = str(RESULTS / "aligned" / "{gene}.aln"),
         config = CONFIG_FILE

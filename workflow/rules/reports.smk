@@ -6,6 +6,9 @@
 
 
 rule gene_report:
+    threads: 1
+    resources:
+        mem_mb=1024
     input:
         primers = str(PRIMERS / "{gene}_primers.tsv"),
         amplicons = str(PRIMERS / "{gene}_amplicons.tsv"),
@@ -41,6 +44,9 @@ rule gene_report:
 
 
 rule gene_report_cross:
+    threads: 1
+    resources:
+        mem_mb=1024
     input:
         summaries = expand(str(PRIMERS / "{gene}_species_summary.tsv"), gene=GENES),
         config = CONFIG_FILE

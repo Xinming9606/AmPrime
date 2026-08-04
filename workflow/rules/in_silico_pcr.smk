@@ -12,6 +12,8 @@
 
 rule in_silico_pcr:
     threads: 4
+    resources:
+        mem_mb=4096
     input:
         primers    = str(PRIMERS / "{gene}_primers.tsv"),
         genome_dir = str(GENOMES_GENOMIC),

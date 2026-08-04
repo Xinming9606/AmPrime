@@ -512,6 +512,15 @@ def check_amprime_api():
     assert result.returncode == 0
     assert result.command[0] == "snakemake"
     assert "-n" in result.command
+
+    invalid_components = [("../escape", "recG"), ("Borrelia", r"..\escape")]
+    for invalid_genus, invalid_gene in invalid_components:
+        try:
+            project.result_paths(invalid_genus, invalid_gene)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("unsafe API path component was accepted")
     print("amprime api ok")
 
 

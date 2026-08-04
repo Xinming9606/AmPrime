@@ -13,6 +13,7 @@ import os
 import shutil
 import subprocess
 import tarfile
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib import resources
@@ -23,6 +24,24 @@ from .provenance import fasta_directory_summary, sha256_file
 DEFAULT_GENUS = "Borrelia"
 DEFAULT_GENE = "recG"
 DEFAULT_TEST_ARCHIVE = Path("data") / "borrelia-genomes.tar.gz"
+
+
+def _safe_component(value: str, label: str) -> str:
+    """Validate a user-provided genus or gene used in a result path."""
+    if not isinstance(value, str):
+        raise ValueError(f"{label} must be a string")
+    component = value.strip()
+    if not component:
+        raise ValueError(f"{label} must be a non-empty string")
+    if (
+        component in {".", ".."}
+        or any(char in component for char in "/\\.:")
+        or any(ord(char) < 32 for char in component)
+    ):
+        raise ValueError(
+            f"{label} must be a single safe path component without '/', '\\', '.', ':'"
+        )
+    return component
 
 
 @dataclass(frozen=True)
@@ -191,33 +210,78 @@ class AmPrimeProject:
         return config_path
 
     def result_dir(self, genus: str = DEFAULT_GENUS) -> Path:
-        return self.root / "results" / genus
+        return self.root / "results" / _safe_component(genus, "genus")
 
     def result_paths(
         self, genus: str = DEFAULT_GENUS, gene: str = DEFAULT_GENE
     ) -> ResultPaths:
-        result_dir = self.result_dir(genus)
+        safe_genus = _safe_component(genus, "genus")
+        safe_gene = _safe_component(gene, "gene")
+        result_dir = self.result_dir(safe_genus)
         return ResultPaths(
-            report_html=result_dir / "reports" / f"{gene}_report.html",
-            primers_tsv=result_dir / "primers" / f"{gene}_primers.tsv",
-            amplicons_tsv=result_dir / "primers" / f"{gene}_amplicons.tsv",
-            species_summary_tsv=result_dir / "primers" / f"{gene}_species_summary.tsv",
-            species_tsv=result_dir / "primers" / f"{gene}_species.tsv",
-            diversity_png=result_dir / "primers" / f"{gene}_diversity.png",
-            alignment_tsv=result_dir / "aligned" / f"{gene}.alignment.tsv",
+            report_html=result_dir / "reports" / f"{safe_gene}_report.html",
+            primers_tsv=result_dir / "primers" / f"{safe_gene}_primers.tsv",
+            amplicons_tsv=result_dir / "primers" / f"{safe_gene}_amplicons.tsv",
+            species_summary_tsv=(
+                result_dir / "primers" / f"{safe_gene}_species_summary.tsv"
+            ),
+            species_tsv=result_dir / "primers" / f"{safe_gene}_species.tsv",
+            diversity_png=result_dir / "primers" / f"{safe_gene}_diversity.png",
+            alignment_tsv=result_dir / "aligned" / f"{safe_gene}.alignment.tsv",
         )
 
+    @contextlib.contextmanager
+    def _functional_config(self, genus: str, gene: str):
+        """Create an isolated config matching one functional-test request."""
+        safe_genus = _safe_component(genus, "genus")
+        safe_gene = _safe_component(gene, "gene")
+        source_config = self.ensure_default_config()
+
+        import yaml
+
+        config = yaml.safe_load(source_config.read_text(encoding="utf-8")) or {}
+        config["genus"] = safe_genus
+        config["genes"] = [safe_gene]
+
+        fd, path = tempfile.mkstemp(
+            prefix=".amprime-functional-", suffix=".yaml", dir=self.root
+        )
+        config_path = Path(path)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                yaml.safe_dump(config, fh, sort_keys=False)
+            # The local archive is prepared after this file. Keep the temporary
+            # config older than the extracted genome directories so Snakemake
+            # reuses those inputs instead of invoking the download rule.
+            os.utime(config_path, (1, 1))
+            yield config_path
+        finally:
+            with contextlib.suppress(FileNotFoundError):
+                config_path.unlink()
+
     def prepare_local_dataset(
-        self, archive: str | Path = DEFAULT_TEST_ARCHIVE, genus: str = DEFAULT_GENUS
+        self,
+        archive: str | Path = DEFAULT_TEST_ARCHIVE,
+        genus: str = DEFAULT_GENUS,
+        config_path: str | Path | None = None,
     ) -> Path:
+        safe_genus = _safe_component(genus, "genus")
         archive_path = Path(archive)
         if not archive_path.is_absolute():
             archive_path = self.root / archive_path
         if not archive_path.is_file():
             raise FileNotFoundError(f"Cannot find test dataset archive: {archive_path}")
 
-        config_path = self.ensure_default_config()
-        output_dir = self.result_dir(genus)
+        if config_path is None:
+            effective_config = self.ensure_default_config()
+        else:
+            effective_config = Path(config_path)
+        if not effective_config.is_absolute():
+            effective_config = self.root / effective_config
+        if not effective_config.is_file():
+            raise FileNotFoundError(f"Cannot find config file: {effective_config}")
+
+        output_dir = self.result_dir(safe_genus)
         output_dir.mkdir(parents=True, exist_ok=True)
         genomes_dir = output_dir / "genomes"
         if genomes_dir.exists():
@@ -230,7 +294,7 @@ class AmPrimeProject:
                 raise FileNotFoundError(f"Dataset is missing {folder}")
             if not list(folder.glob("*.fna")):
                 raise FileNotFoundError(f"Dataset has no FASTA files in {folder}")
-        _write_local_manifest(genomes_dir, genus, config_path)
+        _write_local_manifest(genomes_dir, safe_genus, effective_config)
         return genomes_dir
 
     def run_pipeline(
@@ -240,8 +304,15 @@ class AmPrimeProject:
         dry_run: bool = False,
         rerun_incomplete: bool = True,
         extra_args: list[str] | None = None,
+        configfile: str | Path | None = None,
     ) -> PipelineRun:
-        self.ensure_default_config()
+        effective_config = self.ensure_default_config()
+        if configfile is not None:
+            effective_config = Path(configfile)
+            if not effective_config.is_absolute():
+                effective_config = self.root / effective_config
+            if not effective_config.is_file():
+                raise FileNotFoundError(f"Cannot find config file: {effective_config}")
         command = ["snakemake", "-s", str(self.snakefile())]
         if dry_run:
             command.append("-n")
@@ -266,6 +337,7 @@ class AmPrimeProject:
             command.append(snakemake_target)
 
         env = os.environ.copy()
+        env["AMPRIME_CONFIG_FILE"] = str(effective_config)
         scripts_dir = str(self.workflow_scripts_dir())
         pythonpath = env.get("PYTHONPATH")
         env["PYTHONPATH"] = (
@@ -355,48 +427,56 @@ class AmPrimeProject:
         cores: int = 4,
         expect_no_candidates: bool = False,
     ) -> FunctionalTestResult:
-        self.prepare_local_dataset(archive=archive, genus=genus)
-        report_target = self.result_paths(genus, gene).report_html
-        self.run_pipeline(
-            target=report_target,
-            cores=cores,
-            rerun_incomplete=True,
-            extra_args=[
-                "--rerun-triggers",
-                "mtime",
-                "--forcerun",
-                "gene_extract",
-                "cluster",
-                "align",
-                "primers_design",
-                "primers_check",
-                "in_silico_pcr",
-                "gene_report",
-            ],
-        )
-        cross_target = self.result_dir(genus) / "reports" / "gene_report_cross.html"
-        self.run_pipeline(
-            target=cross_target,
-            cores=cores,
-            rerun_incomplete=True,
-            extra_args=[
-                "--rerun-triggers",
-                "mtime",
-                "--forcerun",
-                "gene_report_cross",
-            ],
-        )
-        return self.verify_result_outputs(
-            genus=genus, gene=gene, expect_no_candidates=expect_no_candidates
-        )
+        with self._functional_config(genus, gene) as config_path:
+            self.prepare_local_dataset(
+                archive=archive, genus=genus, config_path=config_path
+            )
+            report_target = self.result_paths(genus, gene).report_html
+            self.run_pipeline(
+                target=report_target,
+                cores=cores,
+                rerun_incomplete=True,
+                configfile=config_path,
+                extra_args=[
+                    "--rerun-triggers",
+                    "mtime",
+                    "--forcerun",
+                    "gene_extract",
+                    "cluster",
+                    "align",
+                    "primers_design",
+                    "primers_check",
+                    "in_silico_pcr",
+                    "gene_report",
+                ],
+            )
+            cross_target = self.result_dir(genus) / "reports" / "gene_report_cross.html"
+            self.run_pipeline(
+                target=cross_target,
+                cores=cores,
+                rerun_incomplete=True,
+                configfile=config_path,
+                extra_args=[
+                    "--rerun-triggers",
+                    "mtime",
+                    "--forcerun",
+                    "gene_report_cross",
+                ],
+            )
+            return self.verify_result_outputs(
+                genus=genus, gene=gene, expect_no_candidates=expect_no_candidates
+            )
 
 
 def prepare_local_dataset(
     archive: str | Path = DEFAULT_TEST_ARCHIVE,
     genus: str = DEFAULT_GENUS,
     root: str | Path | None = None,
+    config_path: str | Path | None = None,
 ) -> Path:
-    return AmPrimeProject(root).prepare_local_dataset(archive=archive, genus=genus)
+    return AmPrimeProject(root).prepare_local_dataset(
+        archive=archive, genus=genus, config_path=config_path
+    )
 
 
 def run_pipeline(
@@ -404,9 +484,10 @@ def run_pipeline(
     cores: int = 4,
     dry_run: bool = False,
     root: str | Path | None = None,
+    configfile: str | Path | None = None,
 ) -> PipelineRun:
     return AmPrimeProject(root).run_pipeline(
-        target=target, cores=cores, dry_run=dry_run
+        target=target, cores=cores, dry_run=dry_run, configfile=configfile
     )
 
 

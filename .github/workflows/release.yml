@@ -13,6 +13,9 @@ jobs:
   check:
     name: Compile and smoke test
     runs-on: ${{ matrix.os }}
+    env:
+      # Keep release checks on the same explicit reference snapshot as CI.
+      TEST_DATASET_VERSION: borrelia-complete-v1
     strategy:
       fail-fast: false
       matrix:
@@ -31,8 +34,10 @@ jobs:
         id: test-data-cache
         uses: actions/cache@v4
         with:
-          path: data/borrelia-genomes.tar.gz
-          key: amprime-borrelia-genomes-${{ runner.os }}-${{ hashFiles('config/config.yaml', 'workflow/Snakefile', 'tools/download_test_dataset.py', 'workflow/scripts/genomes_download.py', 'workflow/scripts/gene_extract.py') }}
+          path: |
+            data/borrelia-genomes.tar.gz
+            data/borrelia-genomes.tar.gz.json
+          key: amprime-borrelia-genomes-${{ runner.os }}-${{ env.TEST_DATASET_VERSION }}-${{ hashFiles('pixi.lock', 'config/config.yaml', 'workflow/Snakefile', 'tools/download_test_dataset.py', 'tools/verify_test_dataset.py', 'workflow/scripts/genomes_download.py', 'workflow/scripts/gene_extract.py', 'workflow/scripts/common.py') }}
 
       - name: Download CI test dataset
         if: steps.test-data-cache.outputs.cache-hit != 'true'

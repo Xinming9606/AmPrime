@@ -9,6 +9,7 @@ For the full local test, the archive should exist:
 
 ```text
 data/borrelia-genomes.tar.gz
+data/borrelia-genomes.tar.gz.json
 ```
 
 It should contain:
@@ -25,12 +26,21 @@ demand, is not committed to the repository, and may change as NCBI data
 changes. The counts below are therefore snapshot expectations, not permanent
 invariants.
 
-The CI workflow caches this archive by OS and configuration. On a cache miss,
-GitHub Actions downloads it from NCBI before running the test:
+The JSON sidecar records the archive checksum and data snapshot identifier. The
+CI workflow caches both files using an explicit dataset version. On a cache
+miss, GitHub Actions downloads the archive from NCBI before running the test;
+the version must be bumped when the reference snapshot is intentionally
+refreshed:
 
 ```bash
 pixi run download-ci-test-data
 pixi run ci
+```
+
+To verify an existing archive without running the workflow:
+
+```bash
+pixi run verify-ci-test-data
 ```
 
 `functional-test-ci` only consumes an archive that has already been prepared;

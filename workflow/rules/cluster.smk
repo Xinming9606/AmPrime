@@ -13,6 +13,9 @@
 # =============================================================================
 
 rule cluster:
+    threads: 1
+    resources:
+        mem_mb=4096
     input:
         fasta = str(EXTRACTED / "{gene}.fasta"),
         config = CONFIG_FILE

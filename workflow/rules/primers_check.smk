@@ -11,6 +11,9 @@
 
 
 rule primers_check:
+    threads: 1
+    resources:
+        mem_mb=2048
     input:
         primer_tsv = str(PRIMERS / "{gene}_primers_raw.tsv"),
         config = CONFIG_FILE

@@ -14,6 +14,9 @@
 
 
 rule align:
+    threads: 1
+    resources:
+        mem_mb=4096
     input:
         centroids = str(EXTRACTED / "{gene}.centroids.fasta"),
         config = CONFIG_FILE
