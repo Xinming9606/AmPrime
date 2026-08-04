@@ -371,7 +371,11 @@ def main():
     if args.div_cut is not None:
         div_cut = args.div_cut
     elif args.gene:
-        div_cut = cfg.get("div_cut_per_gene", {}).get(args.gene, cfg.get("div_cut"))
+        div_overrides = cfg.get("div_cut_per_gene", {})
+        if isinstance(div_overrides, dict):
+            div_cut = div_overrides.get(args.gene, cfg.get("div_cut"))
+        else:
+            div_cut = cfg.get("div_cut")
     else:
         div_cut = cfg.get("div_cut")
     div_cut = _required_param("div_cut", div_cut)

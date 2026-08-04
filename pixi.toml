@@ -9,8 +9,8 @@ preview = ["pixi-build"]
 
 [dependencies]
 # Default dependencies are intentionally cross-platform across Linux,
-# Apple Silicon macOS, and Windows. Optional alignment backends such as
-# MAFFT/MUSCLE can be installed separately and selected with alignment_backend.
+# Apple Silicon macOS, and Windows. MUSCLE and VSEARCH are installed on Unix;
+# Windows installs them through Scoop when the workflow runs.
 python = "3.12.*"
 snakemake-minimal = ">=8"
 biopython = "*"
@@ -21,6 +21,16 @@ ncbi-genome-download = "*"
 markdown = "*"
 ruff = "*"
 pyrefly = "1.2.*"
+
+# VSEARCH is installed automatically on the supported Unix platforms. Windows
+# installs it through Scoop when the clustering step runs.
+[target.linux-64.dependencies]
+vsearch = "2.30.*"
+muscle = "*"
+
+[target.osx-arm64.dependencies]
+vsearch = "2.30.*"
+muscle = "*"
 
 [tasks]
 compile = "python tools/compile_project.py"
@@ -82,3 +92,11 @@ matplotlib-base = "*"
 pyyaml = "*"
 ncbi-genome-download = "*"
 markdown = "*"
+
+[package.run-dependencies."if(host_platform == 'linux-64')"]
+vsearch = ">=2.30,<2.32"
+muscle = "*"
+
+[package.run-dependencies."if(host_platform == 'osx-arm64')"]
+vsearch = ">=2.30,<2.32"
+muscle = "*"

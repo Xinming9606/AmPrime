@@ -231,25 +231,7 @@ def check_archive_safety():
 
 
 def check_sequence_cli_steps():
-    fasta_cluster = load_script_module("fasta_cluster")
-    fasta_align = load_script_module("fasta_align")
     fasta_io = load_script_module("fasta_io")
-
-    assert fasta_cluster.sequence_identity("ACGTACGT", "ACGTTACGT") == 8 / 9
-    assert fasta_align.choose_backend("python") == "python"
-    exact_deduped = fasta_cluster.cluster_records(
-        [(">a", "ACGT"), (">b", "acgt")], 0.97
-    )
-    assert len(exact_deduped) == 1
-    assert fasta_align.center_star_align([(">a", "ACGT"), (">b", "TGCA")]) == [
-        (">a", "ACGT"),
-        (">b", "TGCA"),
-    ]
-    unequal_aligned = fasta_align.center_star_align(
-        [(">a", "ACGTACGT"), (">b", "ACGTTACGT"), (">c", "ACGTACG")]
-    )
-    assert len({len(seq) for _, seq in unequal_aligned}) == 1
-    assert any("-" in seq for _, seq in unequal_aligned)
 
     with tempfile.TemporaryDirectory() as tmp_dir:
         tmp = Path(tmp_dir)
@@ -292,8 +274,6 @@ def check_sequence_cli_steps():
                 str(aligned),
                 "--metadata",
                 str(alignment_meta),
-                "--backend",
-                "auto",
                 "--log",
                 str(align_log),
             ],
@@ -305,8 +285,8 @@ def check_sequence_cli_steps():
         assert len(aligned_lengths) == 1
         with alignment_meta.open(encoding="utf-8") as fh:
             metadata_rows = list(csv.DictReader(fh, delimiter="\t"))
-        assert metadata_rows[0]["requested_backend"] == "auto"
-        assert metadata_rows[0]["backend_used"] in {"python", "mafft", "muscle"}
+        assert metadata_rows[0]["requested_backend"] == "muscle"
+        assert metadata_rows[0]["backend_used"] == "muscle"
     print("cluster and align cli ok")
 
 

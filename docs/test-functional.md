@@ -76,7 +76,7 @@ a newer NCBI dataset:
 
 ```text
 functional test ok
-primer_rows=<non-negative integer> pcr_rows=<non-negative integer> backend=python report_bytes=<positive integer>
+primer_rows=<non-negative integer> pcr_rows=<non-negative integer> backend=muscle report_bytes=<positive integer>
 ```
 
 ## Step 3. Use The Python API
@@ -143,7 +143,7 @@ expected to contain no primer candidates:
 
 - `gene_extract` finds 82 `recG` CDS hits.
 - `cluster` reduces them to 12 centroids.
-- `align` uses the Python backend.
+- `align` uses MUSCLE.
 - `gene_report` writes a complete no-candidate report.
 
 These counts and the no-candidate result are not guaranteed for a fresh NCBI

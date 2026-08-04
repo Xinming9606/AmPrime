@@ -1,9 +1,9 @@
 # =============================================================================
 # align.smk
 #
-# Per-gene rule: multiple sequence alignment of the clustered centroids. The
-# default backend is Python for cross-platform installs; config.yaml can select
-# auto/MAFFT/MUSCLE when external aligners are available.
+# Per-gene rule: multiple sequence alignment of the clustered centroids with
+# MUSCLE. The executable is installed by Pixi/Conda on Unix and by Scoop on
+# Windows when it is missing.
 #
 # Input  : results/{genus}/extracted/{gene}.centroids.fasta  [temp, from cluster]
 # Output : results/{genus}/aligned/{gene}.aln                [temp]

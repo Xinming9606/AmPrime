@@ -174,7 +174,13 @@ def main():
         raise SystemExit("--gene and --out-fasta are required unless --batch is used")
 
     aliases = list(args.aliases)
-    aliases.extend(cfg.get("gene_aliases", {}).get(args.gene, []))
+    gene_aliases = cfg.get("gene_aliases", {})
+    if isinstance(gene_aliases, dict):
+        configured_aliases = gene_aliases.get(args.gene, [])
+        if isinstance(configured_aliases, list):
+            aliases.extend(
+                alias for alias in configured_aliases if isinstance(alias, str)
+            )
     search_names = {args.gene.lower(), *(alias.lower() for alias in aliases)}
     log.info("Target gene : %s", args.gene)
     log.info("Aliases     : %s", aliases)

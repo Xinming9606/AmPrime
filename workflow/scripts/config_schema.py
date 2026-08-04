@@ -14,7 +14,6 @@ REQUIRED_SETTINGS = [
 ]
 
 ALLOWED_ASSEMBLY_LEVELS = {"complete", "chromosome", "scaffold", "contig"}
-ALLOWED_ALIGNMENT_BACKENDS = {"python", "auto", "mafft", "muscle"}
 QC_THRESHOLD_SETTINGS = [
     "max_hairpin_dg",
     "max_homodimer_dg",
@@ -25,7 +24,6 @@ QC_THRESHOLD_SETTINGS = [
 DEFAULT_SETTINGS = {
     "gene_aliases": {},
     "div_cut_per_gene": {},
-    "alignment_backend": "python",
     "min_allele_freq": 0.05,
     "max_degeneracy": 16,
     "pcr_top_n": 10,
@@ -94,10 +92,6 @@ def validate_config(cfg):
         errors.append(
             "assembly_level must be one of: complete, chromosome, scaffold, contig"
         )
-
-    alignment_backend = cfg.get("alignment_backend", "python")
-    if alignment_backend not in ALLOWED_ALIGNMENT_BACKENDS:
-        errors.append("alignment_backend must be one of: python, auto, mafft, muscle")
 
     errors.extend(
         [

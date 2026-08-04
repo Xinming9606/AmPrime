@@ -11,6 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 DEV_ONLY_DEPS = {"ruff", "pyrefly"}
+PLATFORM_ONLY_DEPS = {"muscle", "vsearch"}
 
 
 def load_toml(path: Path):
@@ -66,23 +67,39 @@ def check_names_and_versions(pixi, pyproject) -> None:
 def check_runtime_dependencies(pixi) -> None:
     workspace_deps = pixi["dependencies"]
     package_deps = pixi["package"]["run-dependencies"]
+    package_base_deps = {
+        name: spec for name, spec in package_deps.items() if not isinstance(spec, dict)
+    }
+    package_conditional_deps = {
+        name
+        for condition, deps in package_deps.items()
+        if isinstance(deps, dict)
+        for name in deps
+    }
 
     expected_names = set(workspace_deps) - DEV_ONLY_DEPS
-    assert_equal("package runtime dependency names", expected_names, set(package_deps))
+    assert_equal(
+        "package runtime dependency names", expected_names, set(package_base_deps)
+    )
+    assert_equal(
+        "package conditional runtime dependency names",
+        PLATFORM_ONLY_DEPS,
+        package_conditional_deps,
+    )
 
     python_minor = python_minor_version(workspace_deps["python"])
     major, minor = (int(part) for part in python_minor.split("."))
     assert_equal(
         "package runtime dependency python",
         f">={major}.{minor},<{major}.{minor + 1}",
-        package_deps["python"],
+        package_base_deps["python"],
     )
 
     for name in sorted(expected_names - {"python"}):
         assert_equal(
             f"package runtime dependency {name}",
             workspace_deps[name],
-            package_deps[name],
+            package_base_deps[name],
         )
 
 
@@ -115,6 +132,7 @@ def check_environment_yaml(pixi) -> None:
     expected = {
         pixi_env_dependency(name, spec) for name, spec in pixi["dependencies"].items()
     }
+    expected.update(PLATFORM_ONLY_DEPS)
     actual = {dep for dep in environment["dependencies"] if isinstance(dep, str)}
     assert_equal("environment dependencies", expected, actual)
 

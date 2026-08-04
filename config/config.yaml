@@ -37,11 +37,6 @@ gene_aliases: {}
 # "complete" is recommended for reliable gene extraction.
 assembly_level: complete
 
-# Alignment backend. "python" is the fully cross-platform fallback. Use "auto"
-# to prefer MAFFT/MUSCLE when they are installed, or set "mafft"/"muscle" to
-# require a specific external aligner for more reliable multiple alignment.
-alignment_backend: python
-
 # -----------------------------------------------------------------------------
 # Primer design parameters
 # -----------------------------------------------------------------------------
