@@ -1,7 +1,7 @@
 # Functional Test
 
-Use the AmPrime API to run the local Borrelia dataset without downloading from
-NCBI.
+Use the AmPrime API to run the Borrelia dataset. CI downloads the archive from
+NCBI through the project downloader before running the same test.
 
 ## Step 1. Check The Dataset
 
@@ -21,11 +21,16 @@ genomes/rna/
 
 Current expected FASTA count: 82 files in each folder.
 
-CI uses a generated one-genome fixture instead, so a clean checkout does not
-need to store the large archive:
+CI creates the archive from NCBI on every run:
 
 ```bash
 pixi run functional-test-ci
+```
+
+The download-only step is:
+
+```bash
+pixi run download-test-data
 ```
 
 ## Step 2. Run Through The API

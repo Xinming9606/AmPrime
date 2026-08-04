@@ -345,8 +345,9 @@ class AmPrimeProject:
         cores: int = 4,
     ) -> FunctionalTestResult:
         self.prepare_local_dataset(archive=archive, genus=genus)
+        report_target = self.result_paths(genus, gene).report_html
         self.run_pipeline(
-            target=None,
+            target=report_target,
             cores=cores,
             rerun_incomplete=True,
             extra_args=[
@@ -360,6 +361,17 @@ class AmPrimeProject:
                 "check_primers",
                 "in_silico_pcr",
                 "gene_report",
+            ],
+        )
+        cross_target = self.result_dir(genus) / "reports" / "cross_gene_report.html"
+        self.run_pipeline(
+            target=cross_target,
+            cores=cores,
+            rerun_incomplete=True,
+            extra_args=[
+                "--rerun-triggers",
+                "mtime",
+                "--forcerun",
                 "cross_gene_report",
             ],
         )

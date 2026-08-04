@@ -37,6 +37,8 @@ def run_download(genus, assembly_level, fmt, out_dir):
         "--flat-output",
         "--output-folder",
         out_dir,
+        "--retries",
+        "3",
     ]
     log.info("Running: %s", " ".join(cmd))
     result = subprocess.run(  # noqa: S603 - fixed downloader with shell=False.

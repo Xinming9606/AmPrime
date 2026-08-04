@@ -33,3 +33,4 @@ run_*.log
 
 data/*
 !data/.gitkeep
+download-debug/

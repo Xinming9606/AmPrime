@@ -191,6 +191,7 @@ AmPrime/
 |-- tools/
 |   |-- compile_project.py
 |   |-- check_metadata.py
+|   |-- download_test_dataset.py
 |   |-- smoke_project.py
 |   |-- test_built_package.py
 |   `-- package_release.py
@@ -270,6 +271,7 @@ pixi run dry-run
 pixi run pipeline
 pixi run ci
 pixi run functional-test
+pixi run download-test-data
 pixi run functional-test-ci
 pixi run source-archive
 pixi run conda-build
@@ -285,7 +287,7 @@ resources, and runs a Snakemake dry run from the installed package.
 
 `metadata-check` keeps mirrored project metadata honest: package names and versions must match across `pixi.toml` and `pyproject.toml`, conda runtime dependencies must stay in `pixi.toml`, and the legacy `environment.yaml` must mirror the default Pixi environment.
 
-For an offline end-to-end run with the local Borrelia test dataset, see
+For the end-to-end Borrelia functional test, including CI dataset download, see
 [docs/test-functional.md](docs/test-functional.md).
 
 You can also call the workflow through the lightweight Python API:
